@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="name">
+
+    <xacro:arg
+        name="fake_initial_positions_file"
+        default="$(find my_moveit_config)/config/initial_positions.yaml" />
+
+    <xacro:include
+        filename="$(find ur_description)/urdf/ur.urdf.xacro" />
+
+    <xacro:include
+        filename="$(find my_moveit_config)/config/name.ros2_control.xacro" />
+
+    <xacro:name_ros2_control
+        name="FakeSystem"
+        initial_positions_file="$(arg fake_initial_positions_file)" />
+
+</robot>
