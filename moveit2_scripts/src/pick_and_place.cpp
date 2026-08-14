@@ -40,6 +40,7 @@ int main(int argc, char * argv[])
     (result == moveit::core::MoveItErrorCode::SUCCESS);
   bool execution_success = false;
   bool gripper_open_success = false;
+  bool approach_success = false;
 
   if (success) {
     RCLCPP_INFO(
@@ -104,8 +105,47 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (gripper_open_success) {
+    geometry_msgs::msg::PoseStamped approach_target = target;
+    approach_target.header.stamp = node->now();
+    approach_target.pose.position.z = 0.182399;
+
+    move_group.setStartStateToCurrentState();
+    move_group.setPoseTarget(approach_target, "tool0");
+
+    moveit::planning_interface::MoveGroupInterface::Plan approach_plan;
+    const auto approach_plan_result = move_group.plan(approach_plan);
+    const bool approach_plan_success =
+      (approach_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+    if (!approach_plan_success) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "APPROACH_PLAN FAIL: execution was not attempted.");
+    } else {
+      RCLCPP_INFO(
+        node->get_logger(),
+        "APPROACH_PLAN PASS: starting trajectory execution.");
+
+      const auto approach_execution_result =
+        move_group.execute(approach_plan);
+      approach_success =
+        (approach_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+      if (approach_success) {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "APPROACH_EXECUTION PASS: trajectory executed successfully.");
+      } else {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "APPROACH_EXECUTION FAIL: gripper close remains locked.");
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return gripper_open_success ? 0 : 1;
+  return approach_success ? 0 : 1;
 }
