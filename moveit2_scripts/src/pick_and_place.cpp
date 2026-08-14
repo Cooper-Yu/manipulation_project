@@ -37,19 +37,34 @@ int main(int argc, char * argv[])
   const auto result = move_group.plan(plan);
   const bool success =
     (result == moveit::core::MoveItErrorCode::SUCCESS);
+  bool execution_success = false;
 
   if (success) {
     RCLCPP_INFO(
       node->get_logger(),
-      "PLAN_ONLY PASS: pre-grasp pose is plannable; trajectory was not executed.");
+      "PLAN PASS: pre-grasp pose is plannable; starting trajectory execution.");
+
+    const auto execution_result = move_group.execute(plan);
+    execution_success =
+      (execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+    if (execution_success) {
+      RCLCPP_INFO(
+        node->get_logger(),
+        "PRE_GRASP_EXECUTION PASS: planned trajectory executed successfully.");
+    } else {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "PRE_GRASP_EXECUTION FAIL: planning passed, but execution failed.");
+    }
   } else {
     RCLCPP_ERROR(
       node->get_logger(),
-      "PLAN_ONLY FAIL: pre-grasp pose could not be planned; trajectory was not executed.");
+      "PLAN FAIL: pre-grasp pose could not be planned; execution was not attempted.");
   }
 
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return success ? 0 : 1;
+  return execution_success ? 0 : 1;
 }
