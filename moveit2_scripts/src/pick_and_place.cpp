@@ -1,8 +1,10 @@
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit_msgs/msg/robot_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -110,27 +112,41 @@ int main(int argc, char * argv[])
   if (gripper_open_success) {
     geometry_msgs::msg::PoseStamped approach_target = target;
     approach_target.header.stamp = node->now();
-    approach_target.pose.position.z = 0.182399;
+    approach_target.pose.position.z = 0.197399;
 
     move_group.setStartStateToCurrentState();
-    move_group.setPoseTarget(approach_target, "tool0");
+    move_group.setPoseReferenceFrame("base_link");
+    move_group.setEndEffectorLink("tool0");
 
-    moveit::planning_interface::MoveGroupInterface::Plan approach_plan;
-    const auto approach_plan_result = move_group.plan(approach_plan);
-    const bool approach_plan_success =
-      (approach_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+    const std::vector<geometry_msgs::msg::Pose> approach_waypoints{
+      approach_target.pose};
+    moveit_msgs::msg::RobotTrajectory approach_trajectory;
+    constexpr double approach_eef_step = 0.01;
+    constexpr double approach_jump_threshold = 0.0;
+    constexpr double minimum_cartesian_fraction = 0.999;
 
-    if (!approach_plan_success) {
+    const double approach_fraction = move_group.computeCartesianPath(
+      approach_waypoints,
+      approach_eef_step,
+      approach_jump_threshold,
+      approach_trajectory,
+      true);
+    const bool approach_path_success =
+      (approach_fraction >= minimum_cartesian_fraction);
+
+    if (!approach_path_success) {
       RCLCPP_ERROR(
         node->get_logger(),
-        "APPROACH_PLAN FAIL: execution was not attempted.");
+        "APPROACH_CARTESIAN_PATH FAIL: fraction=%.3f; execution was not attempted.",
+        approach_fraction);
     } else {
       RCLCPP_INFO(
         node->get_logger(),
-        "APPROACH_PLAN PASS: starting trajectory execution.");
+        "APPROACH_CARTESIAN_PATH PASS: fraction=%.3f; starting trajectory execution.",
+        approach_fraction);
 
       const auto approach_execution_result =
-        move_group.execute(approach_plan);
+        move_group.execute(approach_trajectory);
       approach_success =
         (approach_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
 
@@ -151,7 +167,7 @@ int main(int argc, char * argv[])
 
     const bool close_target_success =
       gripper_group.setJointValueTarget(
-        "robotiq_85_left_knuckle_joint", 0.620);
+        "robotiq_85_left_knuckle_joint", 0.625);
 
     if (!close_target_success) {
       RCLCPP_ERROR(
@@ -195,24 +211,38 @@ int main(int argc, char * argv[])
     retreat_pose.header.stamp = node->now();
 
     move_group.setStartStateToCurrentState();
-    move_group.setPoseTarget(retreat_pose, "tool0");
+    move_group.setPoseReferenceFrame("base_link");
+    move_group.setEndEffectorLink("tool0");
 
-    moveit::planning_interface::MoveGroupInterface::Plan retreat_plan;
-    const auto retreat_plan_result = move_group.plan(retreat_plan);
-    const bool retreat_plan_success =
-      (retreat_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+    const std::vector<geometry_msgs::msg::Pose> retreat_waypoints{
+      retreat_pose.pose};
+    moveit_msgs::msg::RobotTrajectory retreat_trajectory;
+    constexpr double retreat_eef_step = 0.01;
+    constexpr double retreat_jump_threshold = 0.0;
+    constexpr double minimum_retreat_cartesian_fraction = 0.999;
 
-    if (!retreat_plan_success) {
+    const double retreat_fraction = move_group.computeCartesianPath(
+      retreat_waypoints,
+      retreat_eef_step,
+      retreat_jump_threshold,
+      retreat_trajectory,
+      true);
+    const bool retreat_path_success =
+      (retreat_fraction >= minimum_retreat_cartesian_fraction);
+
+    if (!retreat_path_success) {
       RCLCPP_ERROR(
         node->get_logger(),
-        "RETREAT_PLAN FAIL: execution and shoulder transfer were not attempted.");
+        "RETREAT_CARTESIAN_PATH FAIL: fraction=%.3f; execution and shoulder transfer were not attempted.",
+        retreat_fraction);
     } else {
       RCLCPP_INFO(
         node->get_logger(),
-        "RETREAT_PLAN PASS: starting trajectory execution.");
+        "RETREAT_CARTESIAN_PATH PASS: fraction=%.3f; starting trajectory execution.",
+        retreat_fraction);
 
       const auto retreat_execution_result =
-        move_group.execute(retreat_plan);
+        move_group.execute(retreat_trajectory);
       retreat_success =
         (retreat_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
 
