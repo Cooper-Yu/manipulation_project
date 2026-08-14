@@ -150,7 +150,7 @@ int main(int argc, char * argv[])
 
     const bool close_target_success =
       gripper_group.setJointValueTarget(
-        "robotiq_85_left_knuckle_joint", 0.500);
+        "robotiq_85_left_knuckle_joint", 0.620);
 
     if (!close_target_success) {
       RCLCPP_ERROR(
