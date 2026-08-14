@@ -20,6 +20,7 @@ int main(int argc, char * argv[])
   std::thread spin_thread([&executor]() { executor.spin(); });
 
   moveit::planning_interface::MoveGroupInterface move_group(node, "ur_manipulator");
+  moveit::planning_interface::MoveGroupInterface gripper_group(node, "gripper");
   move_group.setStartStateToCurrentState();
 
   geometry_msgs::msg::PoseStamped target;
@@ -38,6 +39,7 @@ int main(int argc, char * argv[])
   const bool success =
     (result == moveit::core::MoveItErrorCode::SUCCESS);
   bool execution_success = false;
+  bool gripper_open_success = false;
 
   if (success) {
     RCLCPP_INFO(
@@ -63,8 +65,47 @@ int main(int argc, char * argv[])
       "PLAN FAIL: pre-grasp pose could not be planned; execution was not attempted.");
   }
 
+  if (execution_success) {
+    gripper_group.setStartStateToCurrentState();
+
+    if (!gripper_group.setNamedTarget("open")) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "GRIPPER_OPEN_TARGET FAIL: named target 'open' was not accepted.");
+    } else {
+      moveit::planning_interface::MoveGroupInterface::Plan open_plan;
+      const auto open_plan_result = gripper_group.plan(open_plan);
+      const bool open_plan_success =
+        (open_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+      if (!open_plan_success) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "GRIPPER_OPEN_PLAN FAIL: execution was not attempted.");
+      } else {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "GRIPPER_OPEN_PLAN PASS: starting gripper execution.");
+
+        const auto open_execution_result = gripper_group.execute(open_plan);
+        gripper_open_success =
+          (open_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (gripper_open_success) {
+          RCLCPP_INFO(
+            node->get_logger(),
+            "GRIPPER_OPEN_EXECUTION PASS: gripper open trajectory executed successfully.");
+        } else {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "GRIPPER_OPEN_EXECUTION FAIL: planning passed, but execution failed.");
+        }
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return execution_success ? 0 : 1;
+  return gripper_open_success ? 0 : 1;
 }
