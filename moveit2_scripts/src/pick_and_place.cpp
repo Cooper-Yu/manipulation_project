@@ -42,6 +42,7 @@ int main(int argc, char * argv[])
   bool gripper_open_success = false;
   bool approach_success = false;
   bool gripper_close_success = false;
+  bool retreat_success = false;
 
   if (success) {
     RCLCPP_INFO(
@@ -189,8 +190,46 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (gripper_close_success) {
+    geometry_msgs::msg::PoseStamped retreat_pose = target;
+    retreat_pose.header.stamp = node->now();
+
+    move_group.setStartStateToCurrentState();
+    move_group.setPoseTarget(retreat_pose, "tool0");
+
+    moveit::planning_interface::MoveGroupInterface::Plan retreat_plan;
+    const auto retreat_plan_result = move_group.plan(retreat_plan);
+    const bool retreat_plan_success =
+      (retreat_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+    if (!retreat_plan_success) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "RETREAT_PLAN FAIL: execution and shoulder transfer were not attempted.");
+    } else {
+      RCLCPP_INFO(
+        node->get_logger(),
+        "RETREAT_PLAN PASS: starting trajectory execution.");
+
+      const auto retreat_execution_result =
+        move_group.execute(retreat_plan);
+      retreat_success =
+        (retreat_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+      if (retreat_success) {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "RETREAT_EXECUTION PASS: verify that the blue block moved with the gripper.");
+      } else {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "RETREAT_EXECUTION FAIL: shoulder transfer remains locked.");
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return gripper_close_success ? 0 : 1;
+  return retreat_success ? 0 : 1;
 }
