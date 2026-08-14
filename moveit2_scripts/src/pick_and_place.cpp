@@ -41,6 +41,7 @@ int main(int argc, char * argv[])
   bool execution_success = false;
   bool gripper_open_success = false;
   bool approach_success = false;
+  bool gripper_close_success = false;
 
   if (success) {
     RCLCPP_INFO(
@@ -144,8 +145,52 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (approach_success) {
+    gripper_group.setStartStateToCurrentState();
+
+    const bool close_target_success =
+      gripper_group.setJointValueTarget(
+        "robotiq_85_left_knuckle_joint", 0.500);
+
+    if (!close_target_success) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "GRIPPER_CLOSE_TARGET FAIL: planning was not attempted.");
+    } else {
+      moveit::planning_interface::MoveGroupInterface::Plan close_plan;
+      const auto close_plan_result = gripper_group.plan(close_plan);
+      const bool close_plan_success =
+        (close_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+      if (!close_plan_success) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "GRIPPER_CLOSE_PLAN FAIL: execution was not attempted.");
+      } else {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "GRIPPER_CLOSE_PLAN PASS: starting gripper execution.");
+
+        const auto close_execution_result =
+          gripper_group.execute(close_plan);
+        gripper_close_success =
+          (close_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (gripper_close_success) {
+          RCLCPP_INFO(
+            node->get_logger(),
+            "GRIPPER_CLOSE_EXECUTION PASS: close trajectory executed successfully.");
+        } else {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "GRIPPER_CLOSE_EXECUTION FAIL: retreat remains locked.");
+        }
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return approach_success ? 0 : 1;
+  return gripper_close_success ? 0 : 1;
 }
