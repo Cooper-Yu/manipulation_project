@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="name">
+    <!--
+      Reuse the course UR3e + Robotiq model without injecting a FakeSystem.
+      The Real Robot Lab owns robot_state_publisher, ros2_control hardware,
+      controllers, robot IP, and live /joint_states.
+    -->
+    <xacro:include
+        filename="$(find ur_description)/urdf/ur.urdf.xacro" />
+</robot>

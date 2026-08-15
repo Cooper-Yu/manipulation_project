@@ -1,0 +1,12 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: ur_description
+    relative_path: urdf/ur.urdf.xacro
+  srdf:
+    relative_path: config/name.srdf
+  package_settings:
+    author_name: Yu Ge
+    author_email: liuzi9240@gmail.com
+    generated_timestamp: 1786608391
+  # The real package intentionally does not inject Setup Assistant fake
+  # ros2_control. Real hardware/controller ownership remains a Real Lab gate.
