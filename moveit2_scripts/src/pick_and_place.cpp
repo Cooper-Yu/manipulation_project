@@ -485,6 +485,10 @@ int main(int argc, char * argv[])
           RCLCPP_INFO(
             node->get_logger(),
             "RELEASE_EXECUTION PASS: gripper opened; verify the blue block placement visually.");
+          RCLCPP_INFO(
+            node->get_logger(),
+            "RELEASE_SETTLING: holding the robot still for 2 seconds before return home.");
+          rclcpp::sleep_for(std::chrono::seconds(2));
         } else {
           RCLCPP_ERROR(
             node->get_logger(),
