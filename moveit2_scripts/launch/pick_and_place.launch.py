@@ -55,8 +55,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "stop_after_transfer",
-                default_value="true",
-                description="Stop after shoulder transfer with the gripper still closed.",
+                default_value="false",
+                description=(
+                    "Diagnostic only: stop after shoulder transfer with the gripper "
+                    "still closed."
+                ),
             ),
             plan_only_probe,
         ]
