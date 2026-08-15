@@ -142,6 +142,10 @@ int main(int argc, char * argv[])
   if (gripper_open_success) {
     geometry_msgs::msg::PoseStamped approach_target = target;
     approach_target.header.stamp = node->now();
+    // Pilz Cartesian goals must use the robot model frame. The SRDF fixed
+    // virtual joint makes world -> base_link an identity transform, so the
+    // target coordinates remain unchanged.
+    approach_target.header.frame_id = "world";
     approach_target.pose.position.z = 0.182399;
 
     // Keep the final descent geometrically predictable. Unlike sampling-based
@@ -153,7 +157,7 @@ int main(int argc, char * argv[])
     move_group.setMaxVelocityScalingFactor(0.01);
     move_group.setMaxAccelerationScalingFactor(0.01);
     move_group.setStartStateToCurrentState();
-    move_group.setPoseReferenceFrame("base_link");
+    move_group.setPoseReferenceFrame("world");
     move_group.setEndEffectorLink("tool0");
     move_group.setPoseTarget(approach_target, "tool0");
 
@@ -260,6 +264,7 @@ int main(int argc, char * argv[])
   if (gripper_close_success && !stop_after_close) {
     geometry_msgs::msg::PoseStamped retreat_pose = target;
     retreat_pose.header.stamp = node->now();
+    retreat_pose.header.frame_id = "world";
 
     move_group.setPlanningPipelineId("pilz_industrial_motion_planner");
     move_group.setPlannerId("LIN");
@@ -268,7 +273,7 @@ int main(int argc, char * argv[])
     move_group.setMaxVelocityScalingFactor(0.01);
     move_group.setMaxAccelerationScalingFactor(0.01);
     move_group.setStartStateToCurrentState();
-    move_group.setPoseReferenceFrame("base_link");
+    move_group.setPoseReferenceFrame("world");
     move_group.setEndEffectorLink("tool0");
     move_group.setPoseTarget(retreat_pose, "tool0");
 
