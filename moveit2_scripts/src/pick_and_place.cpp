@@ -1,3 +1,5 @@
+#include <chrono>
+#include <map>
 #include <memory>
 #include <thread>
 
@@ -14,6 +16,14 @@ int main(int argc, char * argv[])
   const auto node = rclcpp::Node::make_shared(
     "pick_and_place_plan_probe",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+  bool approach_plan_only = false;
+  node->get_parameter("approach_plan_only", approach_plan_only);
+  bool stop_after_approach = false;
+  node->get_parameter("stop_after_approach", stop_after_approach);
+  bool skip_pre_grasp = false;
+  node->get_parameter("skip_pre_grasp", skip_pre_grasp);
+  bool stop_after_close = false;
+  node->get_parameter("stop_after_close", stop_after_close);
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
@@ -32,19 +42,41 @@ int main(int argc, char * argv[])
   target.pose.orientation =
     tf2::toMsg(tf2::Quaternion(-0.707, 0.707, 0.0, 0.0));
 
-  move_group.setPoseTarget(target, "tool0");
-
   moveit::planning_interface::MoveGroupInterface::Plan plan;
-  const auto result = move_group.plan(plan);
-  const bool success =
-    (result == moveit::core::MoveItErrorCode::SUCCESS);
+  bool success = false;
   bool execution_success = false;
   bool gripper_open_success = false;
   bool approach_success = false;
+  bool approach_plan_only_success = false;
+  bool stop_after_approach_success = false;
   bool gripper_close_success = false;
+  bool stop_after_close_success = false;
   bool retreat_success = false;
 
-  if (success) {
+  if (skip_pre_grasp) {
+    success = true;
+    execution_success = true;
+    RCLCPP_INFO(
+      node->get_logger(),
+      "PRE_GRASP_DIAGNOSTIC_SKIP: using the current robot state; no pre-grasp plan was requested.");
+  } else {
+    // Use the observed collision-free IK branch for the pre-grasp pose. Pose
+    // IK alone can select a folded branch whose vertical LIN approach
+    // self-collides even though the endpoint pose is identical.
+    const std::map<std::string, double> pre_grasp_joint_target = {
+      {"shoulder_pan_joint", -0.4537623629},
+      {"shoulder_lift_joint", -1.4902915267},
+      {"elbow_joint", 1.6791594026},
+      {"wrist_1_joint", -1.7592179731},
+      {"wrist_2_joint", -1.5706539700},
+      {"wrist_3_joint", -0.4543265903},
+    };
+    move_group.setJointValueTarget(pre_grasp_joint_target);
+    const auto result = move_group.plan(plan);
+    success = (result == moveit::core::MoveItErrorCode::SUCCESS);
+  }
+
+  if (success && !skip_pre_grasp) {
     RCLCPP_INFO(
       node->get_logger(),
       "PLAN PASS: pre-grasp pose is plannable; starting trajectory execution.");
@@ -62,7 +94,7 @@ int main(int argc, char * argv[])
         node->get_logger(),
         "PRE_GRASP_EXECUTION FAIL: planning passed, but execution failed.");
     }
-  } else {
+  } else if (!success) {
     RCLCPP_ERROR(
       node->get_logger(),
       "PLAN FAIL: pre-grasp pose could not be planned; execution was not attempted.");
@@ -112,6 +144,14 @@ int main(int argc, char * argv[])
     approach_target.header.stamp = node->now();
     approach_target.pose.position.z = 0.182399;
 
+    // Keep the final descent geometrically predictable. Unlike sampling-based
+    // OMPL paths, Pilz LIN constrains the tool motion to a straight segment.
+    move_group.setPlanningPipelineId("pilz_industrial_motion_planner");
+    move_group.setPlannerId("LIN");
+    move_group.setPlanningTime(5.0);
+    move_group.setNumPlanningAttempts(1);
+    move_group.setMaxVelocityScalingFactor(0.01);
+    move_group.setMaxAccelerationScalingFactor(0.01);
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
     move_group.setEndEffectorLink("tool0");
@@ -126,6 +166,11 @@ int main(int argc, char * argv[])
       RCLCPP_ERROR(
         node->get_logger(),
         "APPROACH_PLAN FAIL: execution and gripper close were not attempted.");
+    } else if (approach_plan_only) {
+      approach_plan_only_success = true;
+      RCLCPP_INFO(
+        node->get_logger(),
+        "APPROACH_LIN_PLAN_ONLY PASS: straight-line approach is plannable; execution remains locked.");
     } else {
       RCLCPP_INFO(
         node->get_logger(),
@@ -140,6 +185,12 @@ int main(int argc, char * argv[])
         RCLCPP_INFO(
           node->get_logger(),
           "APPROACH_EXECUTION PASS: trajectory executed successfully.");
+        if (stop_after_approach) {
+          stop_after_approach_success = true;
+          RCLCPP_INFO(
+            node->get_logger(),
+            "STOP_AFTER_APPROACH PASS: gripper close and retreat remain locked for geometry inspection.");
+        }
       } else {
         RCLCPP_ERROR(
           node->get_logger(),
@@ -148,12 +199,12 @@ int main(int argc, char * argv[])
     }
   }
 
-  if (approach_success) {
+  if (approach_success && !stop_after_approach) {
     gripper_group.setStartStateToCurrentState();
 
     const bool close_target_success =
       gripper_group.setJointValueTarget(
-        "robotiq_85_left_knuckle_joint", 0.625);
+        "robotiq_85_left_knuckle_joint", 0.640);
 
     if (!close_target_success) {
       RCLCPP_ERROR(
@@ -183,6 +234,20 @@ int main(int argc, char * argv[])
           RCLCPP_INFO(
             node->get_logger(),
             "GRIPPER_CLOSE_EXECUTION PASS: close trajectory executed successfully.");
+
+          // Give the contact solver a short static settling interval. The
+          // following retreat supplies the opposing friction forces used by
+          // GazeboGraspFix to confirm attachment in the local simulation.
+          RCLCPP_INFO(
+            node->get_logger(),
+            "GRASP_DWELL: holding the closed gripper for contact stabilization.");
+          rclcpp::sleep_for(std::chrono::seconds(2));
+          if (stop_after_close) {
+            stop_after_close_success = true;
+            RCLCPP_INFO(
+              node->get_logger(),
+              "STOP_AFTER_CLOSE PASS: retreat remains locked for contact inspection.");
+          }
         } else {
           RCLCPP_ERROR(
             node->get_logger(),
@@ -192,10 +257,16 @@ int main(int argc, char * argv[])
     }
   }
 
-  if (gripper_close_success) {
+  if (gripper_close_success && !stop_after_close) {
     geometry_msgs::msg::PoseStamped retreat_pose = target;
     retreat_pose.header.stamp = node->now();
 
+    move_group.setPlanningPipelineId("pilz_industrial_motion_planner");
+    move_group.setPlannerId("LIN");
+    move_group.setPlanningTime(5.0);
+    move_group.setNumPlanningAttempts(1);
+    move_group.setMaxVelocityScalingFactor(0.01);
+    move_group.setMaxAccelerationScalingFactor(0.01);
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
     move_group.setEndEffectorLink("tool0");
@@ -235,5 +306,8 @@ int main(int argc, char * argv[])
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
-  return retreat_success ? 0 : 1;
+  const bool requested_result = approach_plan_only ? approach_plan_only_success :
+    (stop_after_approach ? stop_after_approach_success :
+    (stop_after_close ? stop_after_close_success : retreat_success));
+  return requested_result ? 0 : 1;
 }
