@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <thread>
@@ -24,6 +26,8 @@ int main(int argc, char * argv[])
   node->get_parameter("skip_pre_grasp", skip_pre_grasp);
   bool stop_after_close = false;
   node->get_parameter("stop_after_close", stop_after_close);
+  bool stop_after_transfer = true;
+  node->get_parameter("stop_after_transfer", stop_after_transfer);
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
@@ -52,6 +56,7 @@ int main(int argc, char * argv[])
   bool gripper_close_success = false;
   bool stop_after_close_success = false;
   bool retreat_success = false;
+  bool transfer_success = false;
 
   if (skip_pre_grasp) {
     success = true;
@@ -308,11 +313,85 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (retreat_success) {
+    auto transfer_joint_values = move_group.getCurrentJointValues();
+    const auto joint_names = move_group.getJointNames();
+    const auto shoulder_it = std::find(
+      joint_names.begin(), joint_names.end(), "shoulder_pan_joint");
+
+    if (shoulder_it == joint_names.end()) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "TRANSFER_TARGET FAIL: shoulder_pan_joint was not found; transfer was not planned.");
+    } else {
+      const auto shoulder_index =
+        static_cast<std::size_t>(std::distance(joint_names.begin(), shoulder_it));
+
+      if (shoulder_index >= transfer_joint_values.size()) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "TRANSFER_TARGET FAIL: joint-name and joint-value vectors are inconsistent.");
+      } else {
+        constexpr double kHalfTurn = 3.14159265358979323846;
+        transfer_joint_values[shoulder_index] += kHalfTurn;
+
+        move_group.setPlanningPipelineId("ompl");
+        move_group.setPlannerId("");
+        move_group.setPlanningTime(5.0);
+        move_group.setNumPlanningAttempts(5);
+        move_group.setMaxVelocityScalingFactor(0.05);
+        move_group.setMaxAccelerationScalingFactor(0.05);
+        move_group.setStartStateToCurrentState();
+
+        if (!move_group.setJointValueTarget(transfer_joint_values)) {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "TRANSFER_TARGET FAIL: the 180-degree shoulder target was rejected.");
+        } else {
+          moveit::planning_interface::MoveGroupInterface::Plan transfer_plan;
+          const auto transfer_plan_result = move_group.plan(transfer_plan);
+          const bool transfer_plan_success =
+            (transfer_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+          if (!transfer_plan_success) {
+            RCLCPP_ERROR(
+              node->get_logger(),
+              "TRANSFER_PLAN FAIL: execution and gripper release were not attempted.");
+          } else {
+            RCLCPP_INFO(
+              node->get_logger(),
+              "TRANSFER_PLAN PASS: starting 180-degree shoulder execution.");
+
+            const auto transfer_execution_result =
+              move_group.execute(transfer_plan);
+            transfer_success =
+              (transfer_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+            if (transfer_success) {
+              RCLCPP_INFO(
+                node->get_logger(),
+                "TRANSFER_EXECUTION PASS: loading-side shoulder motion completed.");
+              if (stop_after_transfer) {
+                RCLCPP_INFO(
+                  node->get_logger(),
+                  "STOP_AFTER_TRANSFER PASS: gripper release remains locked for visual inspection.");
+              }
+            } else {
+              RCLCPP_ERROR(
+                node->get_logger(),
+                "TRANSFER_EXECUTION FAIL: gripper release remains locked.");
+            }
+          }
+        }
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
   const bool requested_result = approach_plan_only ? approach_plan_only_success :
     (stop_after_approach ? stop_after_approach_success :
-    (stop_after_close ? stop_after_close_success : retreat_success));
+    (stop_after_close ? stop_after_close_success : transfer_success));
   return requested_result ? 0 : 1;
 }
