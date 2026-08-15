@@ -22,6 +22,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             moveit_config.to_dict(),
+            {"use_sim_time": True},
             {"approach_plan_only": approach_plan_only},
             {"stop_after_approach": stop_after_approach},
             {"skip_pre_grasp": skip_pre_grasp},
