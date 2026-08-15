@@ -110,7 +110,7 @@ int main(int argc, char * argv[])
   if (gripper_open_success) {
     geometry_msgs::msg::PoseStamped approach_target = target;
     approach_target.header.stamp = node->now();
-    approach_target.pose.position.z = 0.167399;
+    approach_target.pose.position.z = 0.182399;
 
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
