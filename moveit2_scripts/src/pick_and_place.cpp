@@ -146,7 +146,7 @@ int main(int argc, char * argv[])
     // virtual joint makes world -> base_link an identity transform, so the
     // target coordinates remain unchanged.
     approach_target.header.frame_id = "world";
-    approach_target.pose.position.z = 0.182399;
+    approach_target.pose.position.z = 0.167399;
 
     // Keep the final descent geometrically predictable. Unlike sampling-based
     // OMPL paths, Pilz LIN constrains the tool motion to a straight segment.
