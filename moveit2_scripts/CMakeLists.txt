@@ -24,7 +24,16 @@ ament_target_dependencies(
   tf2_geometry_msgs
 )
 
-install(TARGETS pick_and_place
+add_executable(real_arm_lift_test src/real_arm_lift_test.cpp)
+ament_target_dependencies(
+  real_arm_lift_test
+  moveit_ros_planning_interface
+  rclcpp
+)
+
+install(TARGETS
+  pick_and_place
+  real_arm_lift_test
   DESTINATION lib/${PROJECT_NAME}
 )
 
