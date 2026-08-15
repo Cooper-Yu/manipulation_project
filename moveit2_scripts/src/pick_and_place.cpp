@@ -1,10 +1,8 @@
 #include <memory>
 #include <thread>
-#include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit_msgs/msg/robot_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -117,67 +115,24 @@ int main(int argc, char * argv[])
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
     move_group.setEndEffectorLink("tool0");
+    move_group.setPoseTarget(approach_target, "tool0");
 
-    const std::vector<geometry_msgs::msg::Pose> approach_waypoints{
-      approach_target.pose};
-    moveit_msgs::msg::RobotTrajectory approach_trajectory;
-    constexpr double approach_eef_step = 0.01;
-    constexpr double approach_jump_threshold = 0.0;
-    constexpr double minimum_cartesian_fraction = 0.999;
+    moveit::planning_interface::MoveGroupInterface::Plan approach_plan;
+    const auto approach_plan_result = move_group.plan(approach_plan);
+    const bool approach_plan_success =
+      (approach_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
 
-    const double approach_fraction = move_group.computeCartesianPath(
-      approach_waypoints,
-      approach_eef_step,
-      approach_jump_threshold,
-      approach_trajectory,
-      true);
-    const bool approach_path_success =
-      (approach_fraction >= minimum_cartesian_fraction);
-
-    if (!approach_path_success) {
-      moveit_msgs::msg::RobotTrajectory approach_no_collision_probe;
-      const double approach_no_collision_fraction =
-        move_group.computeCartesianPath(
-          approach_waypoints,
-          approach_eef_step,
-          approach_jump_threshold,
-          approach_no_collision_probe,
-          false);
-
-      moveit_msgs::msg::RobotTrajectory approach_dense_step_probe;
-      constexpr double approach_dense_probe_eef_step = 0.001;
-      const double approach_dense_step_fraction =
-        move_group.computeCartesianPath(
-          approach_waypoints,
-          approach_dense_probe_eef_step,
-          approach_jump_threshold,
-          approach_dense_step_probe,
-          true);
-
-      moveit_msgs::msg::RobotTrajectory approach_dense_no_collision_probe;
-      const double approach_dense_no_collision_fraction =
-        move_group.computeCartesianPath(
-          approach_waypoints,
-          approach_dense_probe_eef_step,
-          approach_jump_threshold,
-          approach_dense_no_collision_probe,
-          false);
-
+    if (!approach_plan_success) {
       RCLCPP_ERROR(
         node->get_logger(),
-        "APPROACH_CARTESIAN_PATH FAIL: collision_check_fraction=%.3f, no_collision_probe_fraction=%.3f, dense_step_probe_fraction=%.3f, dense_no_collision_probe_fraction=%.3f; no diagnostic trajectory was executed.",
-        approach_fraction,
-        approach_no_collision_fraction,
-        approach_dense_step_fraction,
-        approach_dense_no_collision_fraction);
+        "APPROACH_PLAN FAIL: execution and gripper close were not attempted.");
     } else {
       RCLCPP_INFO(
         node->get_logger(),
-        "APPROACH_CARTESIAN_PATH PASS: fraction=%.3f; starting trajectory execution.",
-        approach_fraction);
+        "APPROACH_PLAN PASS: starting trajectory execution.");
 
       const auto approach_execution_result =
-        move_group.execute(approach_trajectory);
+        move_group.execute(approach_plan);
       approach_success =
         (approach_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
 
@@ -244,36 +199,24 @@ int main(int argc, char * argv[])
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
     move_group.setEndEffectorLink("tool0");
+    move_group.setPoseTarget(retreat_pose, "tool0");
 
-    const std::vector<geometry_msgs::msg::Pose> retreat_waypoints{
-      retreat_pose.pose};
-    moveit_msgs::msg::RobotTrajectory retreat_trajectory;
-    constexpr double retreat_eef_step = 0.01;
-    constexpr double retreat_jump_threshold = 0.0;
-    constexpr double minimum_retreat_cartesian_fraction = 0.999;
+    moveit::planning_interface::MoveGroupInterface::Plan retreat_plan;
+    const auto retreat_plan_result = move_group.plan(retreat_plan);
+    const bool retreat_plan_success =
+      (retreat_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
 
-    const double retreat_fraction = move_group.computeCartesianPath(
-      retreat_waypoints,
-      retreat_eef_step,
-      retreat_jump_threshold,
-      retreat_trajectory,
-      true);
-    const bool retreat_path_success =
-      (retreat_fraction >= minimum_retreat_cartesian_fraction);
-
-    if (!retreat_path_success) {
+    if (!retreat_plan_success) {
       RCLCPP_ERROR(
         node->get_logger(),
-        "RETREAT_CARTESIAN_PATH FAIL: fraction=%.3f; execution and shoulder transfer were not attempted.",
-        retreat_fraction);
+        "RETREAT_PLAN FAIL: execution and shoulder transfer were not attempted.");
     } else {
       RCLCPP_INFO(
         node->get_logger(),
-        "RETREAT_CARTESIAN_PATH PASS: fraction=%.3f; starting trajectory execution.",
-        retreat_fraction);
+        "RETREAT_PLAN PASS: starting trajectory execution.");
 
       const auto retreat_execution_result =
-        move_group.execute(retreat_trajectory);
+        move_group.execute(retreat_plan);
       retreat_success =
         (retreat_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
 
