@@ -213,7 +213,7 @@ int main(int argc, char * argv[])
 
     const bool close_target_success =
       gripper_group.setJointValueTarget(
-        "robotiq_85_left_knuckle_joint", 0.645);
+        "robotiq_85_left_knuckle_joint", 0.643);
 
     if (!close_target_success) {
       RCLCPP_ERROR(
@@ -314,72 +314,89 @@ int main(int argc, char * argv[])
   }
 
   if (retreat_success) {
-    auto transfer_joint_values = move_group.getCurrentJointValues();
-    const auto joint_names = move_group.getJointNames();
-    const auto shoulder_it = std::find(
-      joint_names.begin(), joint_names.end(), "shoulder_pan_joint");
-
-    if (shoulder_it == joint_names.end()) {
+    // Wait explicitly for one fresh RobotState after retreat. Reading the
+    // names and positions from the same JointModelGroup keeps their ordering
+    // consistent and avoids planning from an empty/stale value vector.
+    const auto current_state = move_group.getCurrentState(5.0);
+    if (!current_state) {
       RCLCPP_ERROR(
         node->get_logger(),
-        "TRANSFER_TARGET FAIL: shoulder_pan_joint was not found; transfer was not planned.");
+        "TRANSFER_STATE FAIL: no fresh RobotState was received within 5 seconds; transfer was not planned.");
     } else {
-      const auto shoulder_index =
-        static_cast<std::size_t>(std::distance(joint_names.begin(), shoulder_it));
-
-      if (shoulder_index >= transfer_joint_values.size()) {
+      const auto * joint_group =
+        current_state->getJointModelGroup("ur_manipulator");
+      if (joint_group == nullptr) {
         RCLCPP_ERROR(
           node->get_logger(),
-          "TRANSFER_TARGET FAIL: joint-name and joint-value vectors are inconsistent.");
+          "TRANSFER_STATE FAIL: ur_manipulator JointModelGroup was not found; transfer was not planned.");
       } else {
-        constexpr double kHalfTurn = 3.14159265358979323846;
-        transfer_joint_values[shoulder_index] += kHalfTurn;
+        const auto & joint_names = joint_group->getVariableNames();
+        std::vector<double> transfer_joint_values;
+        current_state->copyJointGroupPositions(
+          joint_group, transfer_joint_values);
+        const auto shoulder_it = std::find(
+          joint_names.begin(), joint_names.end(), "shoulder_pan_joint");
 
-        move_group.setPlanningPipelineId("ompl");
-        move_group.setPlannerId("");
-        move_group.setPlanningTime(5.0);
-        move_group.setNumPlanningAttempts(5);
-        move_group.setMaxVelocityScalingFactor(0.05);
-        move_group.setMaxAccelerationScalingFactor(0.05);
-        move_group.setStartStateToCurrentState();
-
-        if (!move_group.setJointValueTarget(transfer_joint_values)) {
+        if (joint_names.size() != transfer_joint_values.size()) {
           RCLCPP_ERROR(
             node->get_logger(),
-            "TRANSFER_TARGET FAIL: the 180-degree shoulder target was rejected.");
+            "TRANSFER_TARGET FAIL: joint-name and joint-value vectors are inconsistent.");
+        } else if (shoulder_it == joint_names.end()) {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "TRANSFER_TARGET FAIL: shoulder_pan_joint was not found; transfer was not planned.");
         } else {
-          moveit::planning_interface::MoveGroupInterface::Plan transfer_plan;
-          const auto transfer_plan_result = move_group.plan(transfer_plan);
-          const bool transfer_plan_success =
-            (transfer_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+          const auto shoulder_index = static_cast<std::size_t>(
+            std::distance(joint_names.begin(), shoulder_it));
+          constexpr double kHalfTurn = 3.14159265358979323846;
+          transfer_joint_values[shoulder_index] += kHalfTurn;
 
-          if (!transfer_plan_success) {
+          move_group.setPlanningPipelineId("ompl");
+          move_group.setPlannerId("");
+          move_group.setPlanningTime(5.0);
+          move_group.setNumPlanningAttempts(5);
+          move_group.setMaxVelocityScalingFactor(0.05);
+          move_group.setMaxAccelerationScalingFactor(0.05);
+          move_group.setStartState(*current_state);
+
+          if (!move_group.setJointValueTarget(transfer_joint_values)) {
             RCLCPP_ERROR(
               node->get_logger(),
-              "TRANSFER_PLAN FAIL: execution and gripper release were not attempted.");
+              "TRANSFER_TARGET FAIL: the 180-degree shoulder target was rejected.");
           } else {
-            RCLCPP_INFO(
-              node->get_logger(),
-              "TRANSFER_PLAN PASS: starting 180-degree shoulder execution.");
+            moveit::planning_interface::MoveGroupInterface::Plan transfer_plan;
+            const auto transfer_plan_result = move_group.plan(transfer_plan);
+            const bool transfer_plan_success =
+              (transfer_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
 
-            const auto transfer_execution_result =
-              move_group.execute(transfer_plan);
-            transfer_success =
-              (transfer_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
-
-            if (transfer_success) {
-              RCLCPP_INFO(
-                node->get_logger(),
-                "TRANSFER_EXECUTION PASS: loading-side shoulder motion completed.");
-              if (stop_after_transfer) {
-                RCLCPP_INFO(
-                  node->get_logger(),
-                  "STOP_AFTER_TRANSFER PASS: gripper release remains locked for visual inspection.");
-              }
-            } else {
+            if (!transfer_plan_success) {
               RCLCPP_ERROR(
                 node->get_logger(),
-                "TRANSFER_EXECUTION FAIL: gripper release remains locked.");
+                "TRANSFER_PLAN FAIL: execution and gripper release were not attempted.");
+            } else {
+              RCLCPP_INFO(
+                node->get_logger(),
+                "TRANSFER_PLAN PASS: starting 180-degree shoulder execution.");
+
+              const auto transfer_execution_result =
+                move_group.execute(transfer_plan);
+              transfer_success =
+                (transfer_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+              if (transfer_success) {
+                RCLCPP_INFO(
+                  node->get_logger(),
+                  "TRANSFER_EXECUTION PASS: loading-side shoulder motion completed.");
+                if (stop_after_transfer) {
+                  RCLCPP_INFO(
+                    node->get_logger(),
+                    "STOP_AFTER_TRANSFER PASS: gripper release remains locked for visual inspection.");
+                }
+              } else {
+                RCLCPP_ERROR(
+                  node->get_logger(),
+                  "TRANSFER_EXECUTION FAIL: gripper release remains locked.");
+              }
             }
           }
         }
