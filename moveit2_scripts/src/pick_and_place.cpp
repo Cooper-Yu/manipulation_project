@@ -57,6 +57,7 @@ int main(int argc, char * argv[])
   bool stop_after_close_success = false;
   bool retreat_success = false;
   bool transfer_success = false;
+  bool release_success = false;
 
   if (skip_pre_grasp) {
     success = true;
@@ -404,11 +405,52 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (transfer_success && !stop_after_transfer) {
+    gripper_group.setStartStateToCurrentState();
+
+    if (!gripper_group.setNamedTarget("open")) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "RELEASE_TARGET FAIL: named target 'open' was not accepted.");
+    } else {
+      moveit::planning_interface::MoveGroupInterface::Plan release_plan;
+      const auto release_plan_result = gripper_group.plan(release_plan);
+      const bool release_plan_success =
+        (release_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+      if (!release_plan_success) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "RELEASE_PLAN FAIL: execution and return home were not attempted.");
+      } else {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "RELEASE_PLAN PASS: starting gripper execution.");
+
+        const auto release_execution_result =
+          gripper_group.execute(release_plan);
+        release_success =
+          (release_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (release_success) {
+          RCLCPP_INFO(
+            node->get_logger(),
+            "RELEASE_EXECUTION PASS: gripper opened; verify the blue block placement visually.");
+        } else {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "RELEASE_EXECUTION FAIL: return home remains locked.");
+        }
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
   const bool requested_result = approach_plan_only ? approach_plan_only_success :
     (stop_after_approach ? stop_after_approach_success :
-    (stop_after_close ? stop_after_close_success : transfer_success));
+    (stop_after_close ? stop_after_close_success :
+    (stop_after_transfer ? transfer_success : release_success)));
   return requested_result ? 0 : 1;
 }
