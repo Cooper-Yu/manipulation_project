@@ -1,16 +1,15 @@
-# Candidate mappings copied from simulation.
-# REAL LAB GATE: verify every controller name, action namespace, action type,
-# and joint list with `ros2 control list_controllers` and
-# `ros2 action list -t` before enabling trajectory execution.
+# Real Lab mappings observed on 2026-08-15. Controller availability must still
+# be checked before execution: the arm controller was observed inactive during
+# the read-only preflight.
 
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 moveit_simple_controller_manager:
   controller_names:
-    - joint_trajectory_controller
-    - gripper_controller
+    - scaled_joint_trajectory_controller
+    - robotiq_gripper_controller
 
-  joint_trajectory_controller:
+  scaled_joint_trajectory_controller:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     default: true
@@ -21,7 +20,7 @@ moveit_simple_controller_manager:
       - wrist_1_joint
       - wrist_2_joint
       - wrist_3_joint
-  gripper_controller:
+  robotiq_gripper_controller:
     type: GripperCommand
     joints:
       - robotiq_85_left_knuckle_joint
