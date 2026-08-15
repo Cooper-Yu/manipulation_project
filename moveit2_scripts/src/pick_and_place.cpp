@@ -144,11 +144,22 @@ int main(int argc, char * argv[])
           approach_no_collision_probe,
           false);
 
+      moveit_msgs::msg::RobotTrajectory approach_dense_step_probe;
+      constexpr double approach_dense_probe_eef_step = 0.001;
+      const double approach_dense_step_fraction =
+        move_group.computeCartesianPath(
+          approach_waypoints,
+          approach_dense_probe_eef_step,
+          approach_jump_threshold,
+          approach_dense_step_probe,
+          true);
+
       RCLCPP_ERROR(
         node->get_logger(),
-        "APPROACH_CARTESIAN_PATH FAIL: collision_check_fraction=%.3f, no_collision_probe_fraction=%.3f; neither trajectory was executed.",
+        "APPROACH_CARTESIAN_PATH FAIL: collision_check_fraction=%.3f, no_collision_probe_fraction=%.3f, dense_step_probe_fraction=%.3f; no diagnostic trajectory was executed.",
         approach_fraction,
-        approach_no_collision_fraction);
+        approach_no_collision_fraction,
+        approach_dense_step_fraction);
     } else {
       RCLCPP_INFO(
         node->get_logger(),
