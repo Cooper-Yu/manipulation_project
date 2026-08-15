@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -35,6 +36,53 @@ int main(int argc, char * argv[])
 
   moveit::planning_interface::MoveGroupInterface move_group(node, "ur_manipulator");
   moveit::planning_interface::MoveGroupInterface gripper_group(node, "gripper");
+
+  // Capture the actual task-start arm configuration before any motion. This
+  // is the Checkpoint's initial position and may differ from named/Section
+  // home states.
+  const auto initial_state = move_group.getCurrentState(5.0);
+  if (!initial_state) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "INITIAL_STATE FAIL: no fresh RobotState was received within 5 seconds; no motion was attempted.");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return 1;
+  }
+
+  const auto * initial_joint_group =
+    initial_state->getJointModelGroup("ur_manipulator");
+  if (initial_joint_group == nullptr) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "INITIAL_STATE FAIL: ur_manipulator JointModelGroup was not found; no motion was attempted.");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return 1;
+  }
+
+  const auto initial_joint_names = initial_joint_group->getVariableNames();
+  std::vector<double> initial_joint_values;
+  initial_state->copyJointGroupPositions(
+    initial_joint_group, initial_joint_values);
+  if (initial_joint_names.empty() ||
+    initial_joint_names.size() != initial_joint_values.size())
+  {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "INITIAL_STATE FAIL: joint-name and joint-value vectors are empty or inconsistent; no motion was attempted.");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return 1;
+  }
+
+  RCLCPP_INFO(
+    node->get_logger(),
+    "INITIAL_STATE PASS: saved %zu arm joint values for return home.",
+    initial_joint_values.size());
   move_group.setStartStateToCurrentState();
 
   geometry_msgs::msg::PoseStamped target;
@@ -58,6 +106,7 @@ int main(int argc, char * argv[])
   bool retreat_success = false;
   bool transfer_success = false;
   bool release_success = false;
+  bool home_success = false;
 
   if (skip_pre_grasp) {
     success = true;
@@ -445,12 +494,64 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (release_success) {
+    const auto home_start_state = move_group.getCurrentState(5.0);
+    if (!home_start_state) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "HOME_STATE FAIL: no fresh RobotState was received; return home was not planned.");
+    } else {
+      move_group.setPlanningPipelineId("ompl");
+      move_group.setPlannerId("");
+      move_group.setPlanningTime(5.0);
+      move_group.setNumPlanningAttempts(5);
+      move_group.setMaxVelocityScalingFactor(0.05);
+      move_group.setMaxAccelerationScalingFactor(0.05);
+      move_group.setStartState(*home_start_state);
+
+      if (!move_group.setJointValueTarget(initial_joint_values)) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "HOME_TARGET FAIL: saved initial joint target was rejected.");
+      } else {
+        moveit::planning_interface::MoveGroupInterface::Plan home_plan;
+        const auto home_plan_result = move_group.plan(home_plan);
+        const bool home_plan_success =
+          (home_plan_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (!home_plan_success) {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "HOME_PLAN FAIL: execution was not attempted.");
+        } else {
+          RCLCPP_INFO(
+            node->get_logger(),
+            "HOME_PLAN PASS: starting return-to-initial-position execution.");
+
+          const auto home_execution_result = move_group.execute(home_plan);
+          home_success =
+            (home_execution_result == moveit::core::MoveItErrorCode::SUCCESS);
+
+          if (home_success) {
+            RCLCPP_INFO(
+              node->get_logger(),
+              "HOME_EXECUTION PASS: robot returned to the saved initial position.");
+          } else {
+            RCLCPP_ERROR(
+              node->get_logger(),
+              "HOME_EXECUTION FAIL: complete Pick & Place remains incomplete.");
+          }
+        }
+      }
+    }
+  }
+
   executor.cancel();
   spin_thread.join();
   rclcpp::shutdown();
   const bool requested_result = approach_plan_only ? approach_plan_only_success :
     (stop_after_approach ? stop_after_approach_success :
     (stop_after_close ? stop_after_close_success :
-    (stop_after_transfer ? transfer_success : release_success)));
+    (stop_after_transfer ? transfer_success : home_success)));
   return requested_result ? 0 : 1;
 }
