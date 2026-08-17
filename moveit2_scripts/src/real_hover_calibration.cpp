@@ -1,4 +1,5 @@
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -17,6 +18,10 @@ int main(int argc, char * argv[])
   node->get_parameter("candidate_x", candidate_x);
   node->get_parameter("candidate_y", candidate_y);
 
+  // TODO(CP13-C272): Declare a default-false execute gate and read the
+  // "execute" ROS parameter into it. Do not add an execute() call yet.
+  bool execute = false;
+  node->get_parameter("execute", execute);
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
   std::thread spin_thread([&executor]() {executor.spin();});
@@ -84,6 +89,35 @@ int main(int argc, char * argv[])
     spin_thread.join();
     rclcpp::shutdown();
     return 1;
+  }
+
+  const auto & joint_trajectory = plan.trajectory_.joint_trajectory;
+  if (joint_trajectory.points.empty()) {
+    RCLCPP_ERROR(node->get_logger(), "TRAJECTORY FAIL: no points; no motion was attempted.");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return 1;
+  }
+
+  const auto & start_positions = joint_trajectory.points.front().positions;
+  const auto & end_positions = joint_trajectory.points.back().positions;
+  if (joint_trajectory.joint_names.size() != start_positions.size() ||
+    start_positions.size() != end_positions.size())
+  {
+    RCLCPP_ERROR(node->get_logger(), "TRAJECTORY FAIL: joint arrays are inconsistent; no motion was attempted.");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return 1;
+  }
+
+  for (std::size_t i = 0; i < joint_trajectory.joint_names.size(); ++i) {
+    // TODO(CP13-C274): Replace the NaN RHS with end minus start at index i.
+    const double delta = end_positions[i] - start_positions[i];
+    RCLCPP_INFO(
+      node->get_logger(), "JOINT_DELTA: %s start=%.6f end=%.6f delta=%.6f rad.",
+      joint_trajectory.joint_names[i].c_str(), start_positions[i], end_positions[i], delta);
   }
 
   RCLCPP_INFO(

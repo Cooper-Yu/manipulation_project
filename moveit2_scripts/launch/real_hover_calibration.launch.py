@@ -8,6 +8,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     candidate_x = LaunchConfiguration("candidate_x")
     candidate_y = LaunchConfiguration("candidate_y")
+    execute = LaunchConfiguration("execute")
     moveit_config = (
         MoveItConfigsBuilder("name", package_name="real_moveit_config")
         .to_moveit_configs()
@@ -17,6 +18,11 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("candidate_x", default_value="0.343"),
             DeclareLaunchArgument("candidate_y", default_value="0.132"),
+            DeclareLaunchArgument(
+                "execute",
+                default_value="false",
+                description="Explicit real-motion gate; execution is not implemented yet.",
+            ),
             Node(
                 package="moveit2_scripts",
                 executable="real_hover_calibration",
@@ -24,7 +30,11 @@ def generate_launch_description():
                 parameters=[
                     moveit_config.to_dict(),
                     {"use_sim_time": False},
-                    {"candidate_x": candidate_x, "candidate_y": candidate_y},
+                    {
+                        "candidate_x": candidate_x,
+                        "candidate_y": candidate_y,
+                        "execute": execute,
+                    },
                 ],
             ),
         ]
