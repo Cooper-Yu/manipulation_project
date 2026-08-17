@@ -21,7 +21,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "execute",
                 default_value="false",
-                description="Explicit real-motion gate; execution is not implemented yet.",
+                description="Explicit real-motion gate; false keeps Plan-only behavior.",
             ),
             Node(
                 package="moveit2_scripts",
