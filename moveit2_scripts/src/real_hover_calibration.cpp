@@ -50,9 +50,13 @@ int main(int argc, char * argv[])
   hover_target.header.stamp = node->now();
   hover_target.header.frame_id = "world";
 
-  // Preserve current z and orientation; only candidate x/y are calibrated.
   hover_target.pose.position.x = candidate_x;
   hover_target.pose.position.y = candidate_y;
+  hover_target.pose.position.z = 0.267;
+  hover_target.pose.orientation.x = -1;
+  hover_target.pose.orientation.y = 0;
+  hover_target.pose.orientation.z = 0;
+  hover_target.pose.orientation.w = 0;
 
   if (!std::isfinite(hover_target.pose.position.x) ||
     !std::isfinite(hover_target.pose.position.y))
