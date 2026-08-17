@@ -38,10 +38,18 @@ ament_target_dependencies(
   rclcpp
 )
 
+add_executable(real_safe_recovery_plan src/real_safe_recovery_plan.cpp)
+ament_target_dependencies(
+  real_safe_recovery_plan
+  moveit_ros_planning_interface
+  rclcpp
+)
+
 install(TARGETS
   pick_and_place
   real_arm_lift_test
   real_hover_calibration
+  real_safe_recovery_plan
   DESTINATION lib/${PROJECT_NAME}
 )
 
