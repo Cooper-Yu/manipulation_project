@@ -47,11 +47,20 @@ ament_target_dependencies(
   std_srvs
 )
 
+add_executable(real_pregrasp_lin_probe src/real_pregrasp_lin_probe.cpp)
+ament_target_dependencies(
+  real_pregrasp_lin_probe
+  geometry_msgs
+  moveit_ros_planning_interface
+  rclcpp
+)
+
 install(TARGETS
   pick_and_place
   real_arm_lift_test
   real_hover_calibration
   real_safe_recovery_plan
+  real_pregrasp_lin_probe
   DESTINATION lib/${PROJECT_NAME}
 )
 

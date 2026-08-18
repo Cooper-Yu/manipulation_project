@@ -34,6 +34,15 @@
         <joint name="wrist_2_joint" value="-1.7814109961139124"/>
         <joint name="wrist_3_joint" value="0.26091188192367554"/>
     </group_state>
+    <!-- Captured from the stationary, visually reviewed Real Lab start/return pose on 2026-08-19. -->
+    <group_state name="real_home_01" group="ur_manipulator">
+        <joint name="shoulder_pan_joint" value="0.0044446127"/>
+        <joint name="shoulder_lift_joint" value="-1.6078649960"/>
+        <joint name="elbow_joint" value="-0.0345116854"/>
+        <joint name="wrist_1_joint" value="-1.5764738522"/>
+        <joint name="wrist_2_joint" value="-0.0001385848"/>
+        <joint name="wrist_3_joint" value="-1.4155305068"/>
+    </group_state>
     <!-- Diagnostic-only target copied from the simulation baseline. Do not
          execute on the real robot without an independent clearance review. -->
     <group_state name="simulation_home_diagnostic" group="ur_manipulator">
