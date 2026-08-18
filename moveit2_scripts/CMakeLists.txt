@@ -10,6 +10,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
@@ -43,6 +44,7 @@ ament_target_dependencies(
   real_safe_recovery_plan
   moveit_ros_planning_interface
   rclcpp
+  std_srvs
 )
 
 install(TARGETS

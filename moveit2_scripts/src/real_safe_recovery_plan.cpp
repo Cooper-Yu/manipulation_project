@@ -1,3 +1,6 @@
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <string>
@@ -5,6 +8,14 @@
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <rclcpp/rclcpp.hpp>
+#include <std_srvs/srv/trigger.hpp>
+
+enum class GateState
+{
+  LOCKED,
+  READY,
+  CONSUMED,
+};
 
 int main(int argc, char * argv[])
 {
@@ -24,6 +35,25 @@ int main(int argc, char * argv[])
     };
 
   moveit::planning_interface::MoveGroupInterface move_group(node, "ur_manipulator");
+
+  std::atomic<GateState> gate_state{GateState::LOCKED};
+  const auto authorization_service = node->create_service<std_srvs::srv::Trigger>(
+    "authorize_safe_recovery",
+    [&gate_state](
+      const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+      GateState expected = GateState::READY;
+      bool accepted = false;
+      // Consume READY exactly once; all other states reject authorization.
+      accepted =
+        gate_state.compare_exchange_strong(expected, GateState::CONSUMED);
+      response->success = accepted;
+      response->message = accepted ?
+        "Authorization accepted; validating the retained Plan start state before execution." :
+        "Authorization rejected: the one-shot gate is already consumed or still locked.";
+    });
+  (void)authorization_service;
 
   const auto current_state = move_group.getCurrentState(5.0);
   if (!current_state) {
@@ -105,9 +135,87 @@ int main(int argc, char * argv[])
       end_positions[i] - start_positions[i]);
   }
 
+  gate_state.store(GateState::READY);
+  const auto authorization_deadline =
+    std::chrono::steady_clock::now() + std::chrono::seconds(60);
+  RCLCPP_WARN(
+    node->get_logger(),
+    "RECOVERY_AUTHORIZATION_READY: reviewed Plan retained for up to 60 seconds; one-shot authorization and fresh-state validation are required before execution.");
+
+  while (
+    gate_state.load() != GateState::CONSUMED &&
+    std::chrono::steady_clock::now() < authorization_deadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  GateState expected = GateState::READY;
+  const bool timed_out =
+    gate_state.compare_exchange_strong(expected, GateState::LOCKED);
+  if (timed_out) {
+    RCLCPP_WARN(
+      node->get_logger(),
+      "RECOVERY_AUTHORIZATION_TIMEOUT: retained Plan invalidated; no motion was attempted.");
+    stop();
+    return 0;
+  }
+
+  if (gate_state.load() != GateState::CONSUMED) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "RECOVERY_GATE FAIL: unexpected state; retained Plan invalidated and no motion was attempted.");
+    gate_state.store(GateState::LOCKED);
+    stop();
+    return 1;
+  }
+
+  // Re-read the robot state after the one-shot authorization has been consumed
+  // and before any future execution path.
+  const auto fresh_state = move_group.getCurrentState(5.0);
+  // Reject the retained Plan if an authorization-time state cannot be read.
+  if (!fresh_state) {
+    // Invalidate the retained trajectory before leaving the failed state-read path.
+    plan.trajectory_.joint_trajectory.points.clear();
+    // Stop the executor thread and shut down ROS before the failure exit.
+    stop();
+    // Exit before the authorization-consumed success path.
+    return 1;
+  }
+  // Allow at most 0.01 rad of authorization-time start-state drift per joint.
+  constexpr double start_tolerance = 0.01;
+  // Start optimistic; every joint comparison can only keep or revoke the match.
+  bool start_state_matches = true;
+  // Compare every retained trajectory joint against the authorization-time state.
+  for (std::size_t i = 0; i < trajectory.joint_names.size(); ++i) {
+    // Query by retained joint name rather than assuming RobotState variable order.
+    const double actual_position = fresh_state->getVariablePosition(trajectory.joint_names[i]);
+    // Measure direction-independent drift from the retained trajectory start.
+    const double position_error = std::abs(actual_position - start_positions[i]);
+    // Preserve any earlier mismatch while adding the current joint result.
+    start_state_matches = start_state_matches && (position_error <= start_tolerance);
+  }
+  // Reject the retained Plan if any authorization-time joint exceeds tolerance.
+  if (!start_state_matches) {
+    // Invalidate the retained trajectory before leaving the stale-state path.
+    plan.trajectory_.joint_trajectory.points.clear();
+    // Stop the executor thread and shut down ROS before the failure exit.
+    stop();
+    // Exit before the authorization-consumed success path.
+    return 1;
+  }
+  // Execute the same retained Plan that passed authorization and freshness checks.
+  const auto execute_result = move_group.execute(plan);
+  // Treat every non-SUCCESS Execute result as a terminal failure.
+  if (execute_result != moveit::core::MoveItErrorCode::SUCCESS) {
+    // Stop the executor thread and shut down ROS after Execute failure.
+    stop();
+    // Propagate Execute failure to the caller without retrying or replanning.
+    return 1;
+  }
+  // Record success before shutting down the ROS runtime.
   RCLCPP_INFO(
     node->get_logger(),
-    "REAL_SAFE_RECOVERY_PLAN_ONLY PASS: trajectory is available for review; no motion was attempted.");
+    "EXECUTE PASS: reviewed retained Plan Execute SUCCESS.");
   stop();
   return 0;
 }
