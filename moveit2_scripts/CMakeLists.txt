@@ -54,6 +54,7 @@ ament_target_dependencies(
   moveit_msgs
   moveit_ros_planning_interface
   rclcpp
+  std_srvs
 )
 
 install(TARGETS

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -10,6 +11,14 @@
 #include <moveit/robot_state/robot_state.h>
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_srvs/srv/trigger.hpp>
+
+enum class GateState
+{
+  LOCKED,
+  READY,
+  CONSUMED,
+};
 
 int main(int argc, char * argv[])
 {
@@ -20,6 +29,23 @@ int main(int argc, char * argv[])
   const auto display_publisher =
     node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
       "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
+
+  std::atomic<GateState> gate_state{GateState::LOCKED};
+  const auto authorization_service = node->create_service<std_srvs::srv::Trigger>(
+    "/real_pregrasp_lin_probe/authorize_pregrasp",
+    [&gate_state](
+      const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+      GateState expected = GateState::READY;
+      const bool accepted =
+        gate_state.compare_exchange_strong(expected, GateState::CONSUMED);
+      response->success = accepted;
+      response->message = accepted ?
+        "Authorization accepted; validating the retained Plan start state before execution." :
+        "Authorization rejected: the one-shot gate is still locked or already consumed.";
+    });
+  (void)authorization_service;
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
@@ -213,12 +239,105 @@ int main(int argc, char * argv[])
   display_publisher->publish(display_trajectory);
   RCLCPP_INFO(
     node->get_logger(),
-    "PREGRASP_DISPLAY_PUBLISHED: retained OMPL trajectory sent to /display_planned_path; zero Execute calls.");
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+    "PREGRASP_DISPLAY_PUBLISHED: retained OMPL trajectory sent to /display_planned_path; execution remains locked.");
+
+  gate_state.store(GateState::READY);
+  const auto authorization_deadline =
+    std::chrono::steady_clock::now() + std::chrono::seconds(60);
+  RCLCPP_WARN(
+    node->get_logger(),
+    "PREGRASP_AUTHORIZATION_READY: exact displayed Plan retained for up to 60 seconds; call /real_pregrasp_lin_probe/authorize_pregrasp once after review.");
+
+  while (
+    gate_state.load() != GateState::CONSUMED &&
+    std::chrono::steady_clock::now() < authorization_deadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  GateState expected = GateState::READY;
+  const bool timed_out =
+    gate_state.compare_exchange_strong(expected, GateState::LOCKED);
+  if (timed_out) {
+    pregrasp_plan.trajectory_.joint_trajectory.points.clear();
+    RCLCPP_WARN(
+      node->get_logger(),
+      "PREGRASP_AUTHORIZATION_TIMEOUT: retained Plan invalidated; no motion was attempted.");
+    stop();
+    return 0;
+  }
+
+  if (gate_state.load() != GateState::CONSUMED) {
+    pregrasp_plan.trajectory_.joint_trajectory.points.clear();
+    gate_state.store(GateState::LOCKED);
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "PREGRASP_GATE FAIL: unexpected gate state; retained Plan invalidated and no motion was attempted.");
+    stop();
+    return 1;
+  }
+
+  const auto fresh_state = move_group.getCurrentState(5.0);
+  if (!fresh_state) {
+    pregrasp_plan.trajectory_.joint_trajectory.points.clear();
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "PREGRASP_FRESH_STATE FAIL: authorization-time robot state unavailable; retained Plan invalidated and no motion was attempted.");
+    stop();
+    return 1;
+  }
+
+  constexpr double start_tolerance = 0.01;
+  bool start_state_matches = true;
+  const auto & retained_start_positions =
+    pregrasp_plan.trajectory_.joint_trajectory.points.front().positions;
+  if (joint_names.size() != retained_start_positions.size()) {
+    pregrasp_plan.trajectory_.joint_trajectory.points.clear();
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "PREGRASP_FRESH_STATE FAIL: retained start arrays are inconsistent; Plan invalidated and no motion was attempted.");
+    stop();
+    return 1;
+  }
+
+  for (std::size_t i = 0; i < joint_names.size(); ++i) {
+    const double actual_position = fresh_state->getVariablePosition(joint_names[i]);
+    const double position_error =
+      std::abs(actual_position - retained_start_positions[i]);
+    start_state_matches =
+      start_state_matches && std::isfinite(actual_position) &&
+      (position_error <= start_tolerance);
+    RCLCPP_INFO(
+      node->get_logger(),
+      "PREGRASP_FRESH_STATE_CHECK: %s retained=%.6f actual=%.6f error=%.6f rad.",
+      joint_names[i].c_str(), retained_start_positions[i], actual_position,
+      position_error);
+  }
+
+  if (!start_state_matches) {
+    pregrasp_plan.trajectory_.joint_trajectory.points.clear();
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "PREGRASP_STALE_PLAN REJECTED: authorization-time state differs from retained Plan start by more than 0.01 rad; no motion was attempted.");
+    stop();
+    return 1;
+  }
+
+  RCLCPP_WARN(
+    node->get_logger(),
+    "PREGRASP_EXECUTE_START: one-shot authorization consumed and fresh-state check passed; executing the exact displayed retained Plan at 1%% scaling.");
+  const auto execute_result = move_group.execute(pregrasp_plan);
+  if (execute_result != moveit::core::MoveItErrorCode::SUCCESS) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "PREGRASP_EXECUTION FAIL: retained Plan execution did not complete successfully; no retry or replan attempted.");
+    stop();
+    return 1;
+  }
 
   RCLCPP_INFO(
     node->get_logger(),
-    "REAL_PREGRASP_LIN_PROBE PASS: OMPL pre-grasp and 20 mm Pilz LIN trajectories are plannable and start-continuous; zero Execute calls, no motion attempted.");
+    "REAL_PREGRASP_EXECUTION PASS: exact displayed retained pre-grasp Plan completed; LIN remained diagnostic-only.");
   stop();
   return 0;
 }
