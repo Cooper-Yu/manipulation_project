@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -93,6 +95,48 @@ int main(int argc, char * argv[])
       "PREGRASP_TRAJECTORY FAIL: endpoint joint arrays are inconsistent; no motion was attempted.");
     stop();
     return 1;
+  }
+
+  const auto & points = pregrasp_trajectory.points;
+  std::vector<double> max_adjacent_changes(joint_names.size(), 0.0);
+  std::vector<double> min_positions = points.front().positions;
+  std::vector<double> max_positions = points.front().positions;
+  for (std::size_t i = 1; i < points.size(); ++i) {
+    if (
+      points[i].positions.size() != joint_names.size() ||
+      points[i - 1].positions.size() != joint_names.size())
+    {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "PREGRASP_TRAJECTORY FAIL: waypoint joint arrays are inconsistent; no motion was attempted.");
+      stop();
+      return 1;
+    }
+
+    for (std::size_t j = 0; j < joint_names.size(); ++j) {
+      max_adjacent_changes[j] = std::max(
+        max_adjacent_changes[j],
+        std::abs(points[i].positions[j] - points[i - 1].positions[j]));
+      min_positions[j] = std::min(min_positions[j], points[i].positions[j]);
+      max_positions[j] = std::max(max_positions[j], points[i].positions[j]);
+    }
+  }
+
+  for (std::size_t j = 0; j < joint_names.size(); ++j) {
+    RCLCPP_INFO(
+      node->get_logger(),
+      "PREGRASP_MAX_ADJACENT_CHANGE: %s %.6f rad.",
+      joint_names[j].c_str(), max_adjacent_changes[j]);
+    RCLCPP_INFO(
+      node->get_logger(),
+      "PREGRASP_JOINT_EXCURSION: %s min=%.6f max=%.6f excursion=%.6f rad.",
+      joint_names[j].c_str(), min_positions[j], max_positions[j],
+      max_positions[j] - min_positions[j]);
+    RCLCPP_INFO(
+      node->get_logger(),
+      "PREGRASP_ENDPOINT_DELTA: %s %.6f rad.",
+      joint_names[j].c_str(),
+      points.back().positions[j] - points.front().positions[j]);
   }
 
   moveit::core::RobotState lin_start_state(real_home_state);
