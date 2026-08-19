@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <thread>
@@ -7,6 +8,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/robot_state/robot_state.h>
+#include <moveit_msgs/msg/display_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 int main(int argc, char * argv[])
@@ -15,6 +17,9 @@ int main(int argc, char * argv[])
   const auto node = rclcpp::Node::make_shared(
     "real_pregrasp_lin_probe",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+  const auto display_publisher =
+    node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
+      "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
@@ -200,6 +205,16 @@ int main(int argc, char * argv[])
     stop();
     return 1;
   }
+
+  moveit_msgs::msg::DisplayTrajectory display_trajectory;
+  display_trajectory.model_id = robot_model->getName();
+  display_trajectory.trajectory_start = pregrasp_plan.start_state_;
+  display_trajectory.trajectory.push_back(pregrasp_plan.trajectory_);
+  display_publisher->publish(display_trajectory);
+  RCLCPP_INFO(
+    node->get_logger(),
+    "PREGRASP_DISPLAY_PUBLISHED: retained OMPL trajectory sent to /display_planned_path; zero Execute calls.");
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   RCLCPP_INFO(
     node->get_logger(),

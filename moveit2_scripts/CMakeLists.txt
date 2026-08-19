@@ -51,6 +51,7 @@ add_executable(real_pregrasp_lin_probe src/real_pregrasp_lin_probe.cpp)
 ament_target_dependencies(
   real_pregrasp_lin_probe
   geometry_msgs
+  moveit_msgs
   moveit_ros_planning_interface
   rclcpp
 )
