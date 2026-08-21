@@ -323,6 +323,10 @@ int main(int argc, char * argv[])
       stop(); return 1;
     }
     RCLCPP_INFO(node->get_logger(), "STARTUP_BRANCH: recovery to real_home_01 required.");
+  } else if (continue_from_pregrasp) {
+    RCLCPP_INFO(
+      node->get_logger(),
+      "STARTUP_BRANCH: loaded pregrasp continuation; recovery intentionally bypassed.");
   } else {
     RCLCPP_INFO(node->get_logger(), "STARTUP_BRANCH: already at real_home_01; recovery skipped.");
   }
