@@ -76,6 +76,16 @@ ament_target_dependencies(
   std_srvs
 )
 
+add_executable(real_pick_place_continuation src/real_pick_place_continuation.cpp)
+ament_target_dependencies(
+  real_pick_place_continuation
+  geometry_msgs
+  moveit_msgs
+  moveit_ros_planning_interface
+  rclcpp
+  std_srvs
+)
+
 install(TARGETS
   pick_and_place
   real_arm_lift_test
@@ -84,6 +94,7 @@ install(TARGETS
   real_pregrasp_lin_probe
   real_high_pregrasp_lin_probe
   real_high_pregrasp_descent
+  real_pick_place_continuation
   DESTINATION lib/${PROJECT_NAME}
 )
 
