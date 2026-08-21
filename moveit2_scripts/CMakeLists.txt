@@ -6,10 +6,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(control_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -79,10 +81,12 @@ ament_target_dependencies(
 add_executable(real_pick_place_continuation src/real_pick_place_continuation.cpp)
 ament_target_dependencies(
   real_pick_place_continuation
+  control_msgs
   geometry_msgs
   moveit_msgs
   moveit_ros_planning_interface
   rclcpp
+  rclcpp_action
   std_srvs
 )
 
