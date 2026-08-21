@@ -12,6 +12,7 @@ find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -90,6 +91,14 @@ ament_target_dependencies(
   std_srvs
 )
 
+add_executable(real_robot_state_display src/real_robot_state_display.cpp)
+ament_target_dependencies(
+  real_robot_state_display
+  moveit_msgs
+  rclcpp
+  sensor_msgs
+)
+
 install(TARGETS
   pick_and_place
   real_arm_lift_test
@@ -99,6 +108,7 @@ install(TARGETS
   real_high_pregrasp_lin_probe
   real_high_pregrasp_descent
   real_pick_place_continuation
+  real_robot_state_display
   DESTINATION lib/${PROJECT_NAME}
 )
 

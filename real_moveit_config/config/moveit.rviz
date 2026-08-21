@@ -24,8 +24,16 @@ Visualization Manager:
       Scene Geometry:
         Scene Alpha: 1
       Scene Robot:
-        Robot Alpha: 0.5
+        Robot Alpha: 0
       Value: true
+    - Class: moveit_rviz_plugin/RobotState
+      Collision Enabled: false
+      Name: Real Robot State
+      Robot Alpha: 0.5
+      Robot Description: robot_description
+      Robot State Topic: /real_robot_state_display
+      Value: true
+      Visual Enabled: true
   Global Options:
     Fixed Frame: world
   Tools:
