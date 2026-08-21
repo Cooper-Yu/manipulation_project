@@ -75,37 +75,72 @@ moveit_msgs::msg::RobotTrajectory make_display_trajectory(
   // passed to execute(), because the arm controller accepts six arm joints.
   auto display_trajectory = arm_trajectory;
   auto & joint_trajectory = display_trajectory.joint_trajectory;
-  constexpr const char * kGripperJoint = "robotiq_85_left_knuckle_joint";
-  const auto existing = std::find(
-    joint_trajectory.joint_names.begin(), joint_trajectory.joint_names.end(),
-    kGripperJoint);
+  const std::map<std::string, double> display_gripper_values = {
+    {"robotiq_85_left_knuckle_joint", gripper_position},
+    {"robotiq_85_right_knuckle_joint", gripper_position},
+    {"robotiq_85_left_inner_knuckle_joint", gripper_position},
+    {"robotiq_85_right_inner_knuckle_joint", gripper_position},
+    {"robotiq_85_left_finger_tip_joint", -gripper_position},
+    {"robotiq_85_right_finger_tip_joint", -gripper_position},
+  };
 
-  if (existing != joint_trajectory.joint_names.end()) {
-    const auto index = static_cast<std::size_t>(
-      std::distance(joint_trajectory.joint_names.begin(), existing));
-    for (auto & point : joint_trajectory.points) {
-      if (index < point.positions.size()) {
-        point.positions[index] = gripper_position;
+  for (const auto & [joint_name, position] : display_gripper_values) {
+    const auto existing = std::find(
+      joint_trajectory.joint_names.begin(), joint_trajectory.joint_names.end(),
+      joint_name);
+    if (existing != joint_trajectory.joint_names.end()) {
+      const auto index = static_cast<std::size_t>(
+        std::distance(joint_trajectory.joint_names.begin(), existing));
+      for (auto & point : joint_trajectory.points) {
+        if (index < point.positions.size()) {
+          point.positions[index] = position;
+        }
       }
+      continue;
     }
-    return display_trajectory;
-  }
 
-  const std::size_t original_joint_count = joint_trajectory.joint_names.size();
-  joint_trajectory.joint_names.push_back(kGripperJoint);
-  for (auto & point : joint_trajectory.points) {
-    point.positions.push_back(gripper_position);
-    if (point.velocities.size() == original_joint_count) {
-      point.velocities.push_back(0.0);
-    }
-    if (point.accelerations.size() == original_joint_count) {
-      point.accelerations.push_back(0.0);
-    }
-    if (point.effort.size() == original_joint_count) {
-      point.effort.push_back(0.0);
+    const std::size_t original_joint_count = joint_trajectory.joint_names.size();
+    joint_trajectory.joint_names.push_back(joint_name);
+    for (auto & point : joint_trajectory.points) {
+      point.positions.push_back(position);
+      if (point.velocities.size() == original_joint_count) {
+        point.velocities.push_back(0.0);
+      }
+      if (point.accelerations.size() == original_joint_count) {
+        point.accelerations.push_back(0.0);
+      }
+      if (point.effort.size() == original_joint_count) {
+        point.effort.push_back(0.0);
+      }
     }
   }
   return display_trajectory;
+}
+
+void set_display_start_gripper_open(moveit_msgs::msg::RobotState & state)
+{
+  const std::map<std::string, double> open_values = {
+    {"robotiq_85_left_knuckle_joint", 0.0},
+    {"robotiq_85_right_knuckle_joint", 0.0},
+    {"robotiq_85_left_inner_knuckle_joint", 0.0},
+    {"robotiq_85_right_inner_knuckle_joint", 0.0},
+    {"robotiq_85_left_finger_tip_joint", 0.0},
+    {"robotiq_85_right_finger_tip_joint", 0.0},
+  };
+  for (const auto & [joint_name, position] : open_values) {
+    const auto existing = std::find(
+      state.joint_state.name.begin(), state.joint_state.name.end(), joint_name);
+    if (existing == state.joint_state.name.end()) {
+      state.joint_state.name.push_back(joint_name);
+      state.joint_state.position.push_back(position);
+      continue;
+    }
+    const auto index = static_cast<std::size_t>(
+      std::distance(state.joint_state.name.begin(), existing));
+    if (index < state.joint_state.position.size()) {
+      state.joint_state.position[index] = position;
+    }
+  }
 }
 
 bool arm_state_matches(
@@ -376,6 +411,7 @@ int main(int argc, char * argv[])
   moveit_msgs::msg::DisplayTrajectory display;
   display.model_id = robot_model->getName();
   display.trajectory_start = starts_at_home ? approach_plan.start_state_ : recovery_plan.start_state_;
+  set_display_start_gripper_open(display.trajectory_start);
   if (!starts_at_home) {
     display.trajectory.push_back(
       make_display_trajectory(recovery_plan.trajectory_, kOpenCommand));
@@ -393,7 +429,7 @@ int main(int argc, char * argv[])
   display_publisher->publish(display);
   RCLCPP_INFO(
     node->get_logger(),
-    "FULL_SEQUENCE_DISPLAY_PUBLISHED: display-only gripper states open/open/open/close/close/open added; retained execution Plans unchanged.");
+    "FULL_SEQUENCE_DISPLAY_PUBLISHED: all six display-only gripper joints encode open/open/open/close/close/open; retained execution Plans unchanged.");
 
   if (!execute) {
     RCLCPP_INFO(node->get_logger(), "REAL_PICK_PLACE_PLAN_ONLY PASS: no commands or motion attempted.");
