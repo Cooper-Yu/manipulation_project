@@ -255,7 +255,9 @@ int main(int argc, char * argv[])
     "real_pick_place_continuation",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
   bool execute = false;
+  bool stop_at_grasp = false;
   node->get_parameter("execute", execute);
+  node->get_parameter("stop_at_grasp", stop_at_grasp);
   const auto display_publisher = node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
     "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
   const auto gripper_client = rclcpp_action::create_client<GripperCommand>(
@@ -354,6 +356,52 @@ int main(int argc, char * argv[])
     !plan_is_valid(descent_plan))
   {
     RCLCPP_ERROR(node->get_logger(), "DESCENT_PLAN FAIL."); stop(); return 1;
+  }
+
+  if (stop_at_grasp) {
+    moveit_msgs::msg::DisplayTrajectory display;
+    display.model_id = robot_model->getName();
+    display.trajectory_start = starts_at_home ? approach_plan.start_state_ : recovery_plan.start_state_;
+    set_display_start_gripper_open(display.trajectory_start);
+    if (!starts_at_home) {
+      display.trajectory.push_back(
+        make_display_trajectory(recovery_plan.trajectory_, kOpenCommand));
+    }
+    display.trajectory.push_back(
+      make_display_trajectory(approach_plan.trajectory_, kOpenCommand));
+    display.trajectory.push_back(
+      make_display_trajectory(descent_plan.trajectory_, kOpenCommand));
+    display_publisher->publish(display);
+    RCLCPP_INFO(
+      node->get_logger(),
+      "STOP_AT_GRASP_DISPLAY_PUBLISHED: retained recovery/approach/60 mm descent only; gripper remains open.");
+
+    if (!execute) {
+      RCLCPP_INFO(
+        node->get_logger(),
+        "REAL_STOP_AT_GRASP_PLAN_ONLY PASS: no commands or motion attempted.");
+      rclcpp::sleep_for(std::chrono::seconds(3)); stop(); return 0;
+    }
+
+    RCLCPP_WARN(
+      node->get_logger(),
+      "REAL_STOP_AT_GRASP_EXECUTE: moving only to the open-gripper grasp pose at 1%% scaling.");
+    if (!starts_at_home &&
+      !execute_retained_arm_plan(node, arm_group, recovery_plan, "RECOVERY_HOME"))
+    {stop(); return 1;}
+    if (!send_gripper_command(node, gripper_client, kOpenCommand, "STARTUP_OPEN"))
+    {stop(); return 1;}
+    RCLCPP_INFO(
+      node->get_logger(), "STARTUP_OPEN_SETTLING: waiting 2 seconds before pregrasp.");
+    rclcpp::sleep_for(std::chrono::seconds(2));
+    if (!execute_retained_arm_plan(node, arm_group, approach_plan, "PREGRASP") ||
+      !execute_retained_arm_plan(node, arm_group, descent_plan, "DESCENT_60MM"))
+    {stop(); return 1;}
+
+    RCLCPP_INFO(
+      node->get_logger(),
+      "REAL_STOP_AT_GRASP PASS: grasp pose reached with gripper open; no close, lift, transfer, release, or final-home command attempted.");
+    stop(); return 0;
   }
 
   moveit::core::RobotState grasp_state(pregrasp_state);

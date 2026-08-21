@@ -22,7 +22,10 @@ def generate_launch_description():
             {
                 "execute": ParameterValue(
                     LaunchConfiguration("execute"), value_type=bool
-                )
+                ),
+                "stop_at_grasp": ParameterValue(
+                    LaunchConfiguration("stop_at_grasp"), value_type=bool
+                ),
             },
         ],
     )
@@ -33,6 +36,14 @@ def generate_launch_description():
                 "execute",
                 default_value="true",
                 description="Execute by default; set false for Plan-only review.",
+            ),
+            DeclareLaunchArgument(
+                "stop_at_grasp",
+                default_value="false",
+                description=(
+                    "Stop at the open-gripper grasp pose after the 60 mm descent; "
+                    "skip close, lift, transfer, release, and final home."
+                ),
             ),
             pick_place_node,
         ]
