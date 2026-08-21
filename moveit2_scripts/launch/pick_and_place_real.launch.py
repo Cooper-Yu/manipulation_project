@@ -7,6 +7,9 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def generate_launch_description():
+    # This is the single official real-robot entry point. With no arguments it
+    # runs the complete sequence; the two optional modes expose bounded
+    # calibration/recovery slices without changing the default workflow.
     moveit_config = (
         MoveItConfigsBuilder("name", package_name="real_moveit_config")
         .to_moveit_configs()
@@ -38,7 +41,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "execute",
                 default_value="true",
-                description="Execute by default; set false for Plan-only review.",
+                description=(
+                    "Run the selected real-robot sequence; set false to publish "
+                    "the retained plans for RViz review without sending commands."
+                ),
             ),
             DeclareLaunchArgument(
                 "stop_at_grasp",

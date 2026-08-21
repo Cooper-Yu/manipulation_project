@@ -266,6 +266,12 @@ int main(int argc, char * argv[])
       "MODE FAIL: stop_at_grasp and continue_from_pregrasp are mutually exclusive.");
     rclcpp::shutdown(); return 1;
   }
+
+  // Runtime modes:
+  //   default: complete home -> grasp -> transfer -> release -> home sequence;
+  //   stop_at_grasp: stop with an open gripper at the calibrated grasp pose;
+  //   continue_from_pregrasp: resume only the loaded transfer/release/home tail.
+  // The optional modes are deliberately mutually exclusive above.
   const auto display_publisher = node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
     "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
   const auto gripper_client = rclcpp_action::create_client<GripperCommand>(
@@ -309,6 +315,9 @@ int main(int argc, char * argv[])
     node, actual_start, home_state, arm_joint_names, "INITIAL_HOME");
 
   Plan recovery_plan;
+  // The full/default workflow always establishes the named home baseline.
+  // A loaded-pregrasp continuation must bypass this recovery, otherwise the
+  // held object would be carried through an unreviewed return-to-home path.
   if (!starts_at_home && !continue_from_pregrasp) {
     moveit::core::RobotState recovery_start(*actual_start);
     set_planning_gripper_state(recovery_start, kOpenCommand);
@@ -344,6 +353,9 @@ int main(int argc, char * argv[])
   pregrasp_target.pose.orientation.w = qw / q_norm;
 
   if (continue_from_pregrasp) {
+    // Pose validation is branch-independent: a different IK solution is valid
+    // when it represents the same accepted loaded pregrasp pose. Rejecting by
+    // pose tolerance avoids coupling the continuation to one stored joint set.
     const auto current_pose = arm_group.getCurrentPose("tool0");
     const double dx = current_pose.pose.position.x - pregrasp_target.pose.position.x;
     const double dy = current_pose.pose.position.y - pregrasp_target.pose.position.y;
@@ -368,6 +380,9 @@ int main(int argc, char * argv[])
     }
 
     moveit::core::RobotState loaded_pregrasp_state(*actual_start);
+    // The course backend publishes a fake gripper joint value. Override only
+    // the planning copy so collision/state propagation represents the object
+    // being held; physical control remains the direct GripperCommand action.
     set_planning_gripper_state(loaded_pregrasp_state, kCloseCommand);
     std::vector<double> transfer_values;
     loaded_pregrasp_state.copyJointGroupPositions(arm_jmg, transfer_values);
@@ -431,6 +446,9 @@ int main(int argc, char * argv[])
       rclcpp::sleep_for(std::chrono::seconds(3)); stop(); return 0;
     }
 
+    // Execute exactly the two retained plans reviewed above. Release occurs
+    // only after transfer succeeds; final home occurs only after release and
+    // the required two-second settling interval complete.
     RCLCPP_WARN(
       node->get_logger(),
       "REAL_CONTINUE_FROM_PREGRASP_EXECUTE: transfer, release, settling, and final home only.");
@@ -452,6 +470,8 @@ int main(int argc, char * argv[])
   }
 
   arm_group.setStartState(home_state);
+  // Default complete workflow: home -> pregrasp -> 60 mm LIN descent -> close
+  // -> 60 mm LIN lift -> shoulder +pi transfer -> release -> final home.
   arm_group.setPlanningPipelineId("ompl");
   arm_group.setPlannerId("");
   arm_group.setPoseTarget(pregrasp_target, "tool0");
