@@ -29,5 +29,11 @@ def generate_launch_description():
                     {"use_sim_time": False},
                 ],
             ),
+            Node(
+                package="moveit2_scripts",
+                executable="real_robot_state_display",
+                output="screen",
+                parameters=[{"use_sim_time": False}],
+            ),
         ]
     )
