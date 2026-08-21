@@ -66,6 +66,16 @@ ament_target_dependencies(
   rclcpp
 )
 
+add_executable(real_high_pregrasp_descent src/real_high_pregrasp_descent.cpp)
+ament_target_dependencies(
+  real_high_pregrasp_descent
+  geometry_msgs
+  moveit_msgs
+  moveit_ros_planning_interface
+  rclcpp
+  std_srvs
+)
+
 install(TARGETS
   pick_and_place
   real_arm_lift_test
@@ -73,6 +83,7 @@ install(TARGETS
   real_safe_recovery_plan
   real_pregrasp_lin_probe
   real_high_pregrasp_lin_probe
+  real_high_pregrasp_descent
   DESTINATION lib/${PROJECT_NAME}
 )
 
