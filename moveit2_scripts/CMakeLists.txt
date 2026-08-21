@@ -31,6 +31,7 @@ ament_target_dependencies(
 add_executable(real_arm_lift_test src/real_arm_lift_test.cpp)
 ament_target_dependencies(
   real_arm_lift_test
+  moveit_msgs
   moveit_ros_planning_interface
   rclcpp
 )

@@ -4,6 +4,7 @@
 #include <thread>
 
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit_msgs/msg/display_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 int main(int argc, char * argv[])
@@ -30,6 +31,10 @@ int main(int argc, char * argv[])
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
   std::thread spin_thread([&executor]() {executor.spin();});
+
+  const auto display_publisher =
+    node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
+    "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
 
   moveit::planning_interface::MoveGroupInterface move_group(node, "ur_manipulator");
   move_group.setPoseReferenceFrame("world");
@@ -91,11 +96,21 @@ int main(int argc, char * argv[])
     return 1;
   }
 
+  moveit_msgs::msg::DisplayTrajectory display;
+  display.model_id = move_group.getRobotModel()->getName();
+  display.trajectory_start = plan.start_state_;
+  display.trajectory.push_back(plan.trajectory_);
+  display_publisher->publish(display);
+  RCLCPP_INFO(
+    node->get_logger(),
+    "REAL_ARM_LIFT_DISPLAY_PUBLISHED: exact retained LIN Plan sent to /display_planned_path.");
+
   if (!execute) {
     RCLCPP_INFO(
       node->get_logger(),
       "REAL_ARM_LIFT_PLAN_ONLY PASS: 20 mm-class LIN lift is plannable; execution remains locked."
       " Re-run with execute:=true only after RViz trajectory inspection and explicit authorization.");
+    rclcpp::sleep_for(std::chrono::seconds(3));
     executor.cancel();
     spin_thread.join();
     rclcpp::shutdown();
