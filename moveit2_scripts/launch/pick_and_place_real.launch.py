@@ -39,8 +39,8 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "execute",
-                default_value="false",
-                description="Execute the retained real pick-and-place sequence.",
+                default_value="true",
+                description="Execute by default; set false for Plan-only review.",
             ),
             state_display_node,
             pick_place_node,
