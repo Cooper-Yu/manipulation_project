@@ -67,6 +67,47 @@ void set_planning_gripper_state(moveit::core::RobotState & state, double command
   }
 }
 
+moveit_msgs::msg::RobotTrajectory make_display_trajectory(
+  const moveit_msgs::msg::RobotTrajectory & arm_trajectory,
+  double gripper_position)
+{
+  // Display-only copy: never add the gripper joint to the retained arm Plan
+  // passed to execute(), because the arm controller accepts six arm joints.
+  auto display_trajectory = arm_trajectory;
+  auto & joint_trajectory = display_trajectory.joint_trajectory;
+  constexpr const char * kGripperJoint = "robotiq_85_left_knuckle_joint";
+  const auto existing = std::find(
+    joint_trajectory.joint_names.begin(), joint_trajectory.joint_names.end(),
+    kGripperJoint);
+
+  if (existing != joint_trajectory.joint_names.end()) {
+    const auto index = static_cast<std::size_t>(
+      std::distance(joint_trajectory.joint_names.begin(), existing));
+    for (auto & point : joint_trajectory.points) {
+      if (index < point.positions.size()) {
+        point.positions[index] = gripper_position;
+      }
+    }
+    return display_trajectory;
+  }
+
+  const std::size_t original_joint_count = joint_trajectory.joint_names.size();
+  joint_trajectory.joint_names.push_back(kGripperJoint);
+  for (auto & point : joint_trajectory.points) {
+    point.positions.push_back(gripper_position);
+    if (point.velocities.size() == original_joint_count) {
+      point.velocities.push_back(0.0);
+    }
+    if (point.accelerations.size() == original_joint_count) {
+      point.accelerations.push_back(0.0);
+    }
+    if (point.effort.size() == original_joint_count) {
+      point.effort.push_back(0.0);
+    }
+  }
+  return display_trajectory;
+}
+
 bool arm_state_matches(
   const rclcpp::Node::SharedPtr & node,
   const moveit::core::RobotStatePtr & actual_state,
@@ -335,14 +376,24 @@ int main(int argc, char * argv[])
   moveit_msgs::msg::DisplayTrajectory display;
   display.model_id = robot_model->getName();
   display.trajectory_start = starts_at_home ? approach_plan.start_state_ : recovery_plan.start_state_;
-  if (!starts_at_home) {display.trajectory.push_back(recovery_plan.trajectory_);}
-  display.trajectory.push_back(approach_plan.trajectory_);
-  display.trajectory.push_back(descent_plan.trajectory_);
-  display.trajectory.push_back(lift_plan.trajectory_);
-  display.trajectory.push_back(transfer_plan.trajectory_);
-  display.trajectory.push_back(final_home_plan.trajectory_);
+  if (!starts_at_home) {
+    display.trajectory.push_back(
+      make_display_trajectory(recovery_plan.trajectory_, kOpenCommand));
+  }
+  display.trajectory.push_back(
+    make_display_trajectory(approach_plan.trajectory_, kOpenCommand));
+  display.trajectory.push_back(
+    make_display_trajectory(descent_plan.trajectory_, kOpenCommand));
+  display.trajectory.push_back(
+    make_display_trajectory(lift_plan.trajectory_, kCloseCommand));
+  display.trajectory.push_back(
+    make_display_trajectory(transfer_plan.trajectory_, kCloseCommand));
+  display.trajectory.push_back(
+    make_display_trajectory(final_home_plan.trajectory_, kOpenCommand));
   display_publisher->publish(display);
-  RCLCPP_INFO(node->get_logger(), "FULL_SEQUENCE_DISPLAY_PUBLISHED: retained arm-only sequence sent to RViz.");
+  RCLCPP_INFO(
+    node->get_logger(),
+    "FULL_SEQUENCE_DISPLAY_PUBLISHED: display-only gripper states open/open/open/close/close/open added; retained execution Plans unchanged.");
 
   if (!execute) {
     RCLCPP_INFO(node->get_logger(), "REAL_PICK_PLACE_PLAN_ONLY PASS: no commands or motion attempted.");
