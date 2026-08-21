@@ -256,8 +256,16 @@ int main(int argc, char * argv[])
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
   bool execute = false;
   bool stop_at_grasp = false;
+  bool continue_from_pregrasp = false;
   node->get_parameter("execute", execute);
   node->get_parameter("stop_at_grasp", stop_at_grasp);
+  node->get_parameter("continue_from_pregrasp", continue_from_pregrasp);
+  if (stop_at_grasp && continue_from_pregrasp) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "MODE FAIL: stop_at_grasp and continue_from_pregrasp are mutually exclusive.");
+    rclcpp::shutdown(); return 1;
+  }
   const auto display_publisher = node->create_publisher<moveit_msgs::msg::DisplayTrajectory>(
     "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
   const auto gripper_client = rclcpp_action::create_client<GripperCommand>(
@@ -301,7 +309,7 @@ int main(int argc, char * argv[])
     node, actual_start, home_state, arm_joint_names, "INITIAL_HOME");
 
   Plan recovery_plan;
-  if (!starts_at_home) {
+  if (!starts_at_home && !continue_from_pregrasp) {
     moveit::core::RobotState recovery_start(*actual_start);
     set_planning_gripper_state(recovery_start, kOpenCommand);
     arm_group.setStartState(recovery_start);
@@ -330,6 +338,114 @@ int main(int argc, char * argv[])
   pregrasp_target.pose.orientation.y = qy / q_norm;
   pregrasp_target.pose.orientation.z = qz / q_norm;
   pregrasp_target.pose.orientation.w = qw / q_norm;
+
+  if (continue_from_pregrasp) {
+    const auto current_pose = arm_group.getCurrentPose("tool0");
+    const double dx = current_pose.pose.position.x - pregrasp_target.pose.position.x;
+    const double dy = current_pose.pose.position.y - pregrasp_target.pose.position.y;
+    const double dz = current_pose.pose.position.z - pregrasp_target.pose.position.z;
+    const double position_error = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const double quaternion_dot = std::abs(
+      current_pose.pose.orientation.x * pregrasp_target.pose.orientation.x +
+      current_pose.pose.orientation.y * pregrasp_target.pose.orientation.y +
+      current_pose.pose.orientation.z * pregrasp_target.pose.orientation.z +
+      current_pose.pose.orientation.w * pregrasp_target.pose.orientation.w);
+    const double orientation_error =
+      2.0 * std::acos(std::clamp(quaternion_dot, 0.0, 1.0));
+    RCLCPP_INFO(
+      node->get_logger(),
+      "CONTINUE_PREGRASP_POSE_CHECK: position_error=%.6f m orientation_error=%.6f rad.",
+      position_error, orientation_error);
+    if (position_error > 0.005 || orientation_error > 0.05236) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "CONTINUE_PREGRASP_STATE REJECTED: current tool0 is outside the accepted pregrasp tolerance.");
+      stop(); return 1;
+    }
+
+    moveit::core::RobotState loaded_pregrasp_state(*actual_start);
+    set_planning_gripper_state(loaded_pregrasp_state, kCloseCommand);
+    std::vector<double> transfer_values;
+    loaded_pregrasp_state.copyJointGroupPositions(arm_jmg, transfer_values);
+    const auto shoulder_it = std::find(
+      arm_joint_names.begin(), arm_joint_names.end(), "shoulder_pan_joint");
+    if (shoulder_it == arm_joint_names.end()) {
+      RCLCPP_ERROR(node->get_logger(), "CONTINUE_TRANSFER_TARGET FAIL.");
+      stop(); return 1;
+    }
+    constexpr double kHalfTurn = 3.14159265358979323846;
+    transfer_values[static_cast<std::size_t>(
+      std::distance(arm_joint_names.begin(), shoulder_it))] += kHalfTurn;
+    arm_group.clearPoseTargets();
+    arm_group.setStartState(loaded_pregrasp_state);
+    arm_group.setPlanningPipelineId("ompl");
+    arm_group.setPlannerId("");
+    if (!arm_group.setJointValueTarget(transfer_values)) {
+      RCLCPP_ERROR(node->get_logger(), "CONTINUE_TRANSFER_TARGET FAIL.");
+      stop(); return 1;
+    }
+    Plan continue_transfer_plan;
+    if (arm_group.plan(continue_transfer_plan) != moveit::core::MoveItErrorCode::SUCCESS ||
+      !plan_is_valid(continue_transfer_plan))
+    {
+      RCLCPP_ERROR(node->get_logger(), "CONTINUE_TRANSFER_PLAN FAIL.");
+      stop(); return 1;
+    }
+
+    moveit::core::RobotState released_transfer_state(loaded_pregrasp_state);
+    apply_plan_endpoint(released_transfer_state, continue_transfer_plan);
+    set_planning_gripper_state(released_transfer_state, kOpenCommand);
+    arm_group.setStartState(released_transfer_state);
+    if (!arm_group.setJointValueTarget(home_values)) {
+      RCLCPP_ERROR(node->get_logger(), "CONTINUE_FINAL_HOME_TARGET FAIL.");
+      stop(); return 1;
+    }
+    Plan continue_home_plan;
+    if (arm_group.plan(continue_home_plan) != moveit::core::MoveItErrorCode::SUCCESS ||
+      !plan_is_valid(continue_home_plan))
+    {
+      RCLCPP_ERROR(node->get_logger(), "CONTINUE_FINAL_HOME_PLAN FAIL.");
+      stop(); return 1;
+    }
+
+    moveit_msgs::msg::DisplayTrajectory display;
+    display.model_id = robot_model->getName();
+    display.trajectory_start = continue_transfer_plan.start_state_;
+    display.trajectory.push_back(
+      make_display_trajectory(continue_transfer_plan.trajectory_, kCloseCommand));
+    display.trajectory.push_back(
+      make_display_trajectory(continue_home_plan.trajectory_, kOpenCommand));
+    display_publisher->publish(display);
+    RCLCPP_INFO(
+      node->get_logger(),
+      "CONTINUE_FROM_PREGRASP_DISPLAY_PUBLISHED: retained transfer and final-home Plans only.");
+
+    if (!execute) {
+      RCLCPP_INFO(
+        node->get_logger(),
+        "REAL_CONTINUE_FROM_PREGRASP_PLAN_ONLY PASS: no gripper command or motion attempted.");
+      rclcpp::sleep_for(std::chrono::seconds(3)); stop(); return 0;
+    }
+
+    RCLCPP_WARN(
+      node->get_logger(),
+      "REAL_CONTINUE_FROM_PREGRASP_EXECUTE: transfer, release, settling, and final home only.");
+    if (!execute_retained_arm_plan(
+        node, arm_group, continue_transfer_plan, "CONTINUE_TRANSFER_PLUS_PI") ||
+      !send_gripper_command(node, gripper_client, kOpenCommand, "CONTINUE_RELEASE_OPEN"))
+    {stop(); return 1;}
+    RCLCPP_INFO(
+      node->get_logger(),
+      "CONTINUE_RELEASE_SETTLING: waiting 2 seconds before final home.");
+    rclcpp::sleep_for(std::chrono::seconds(2));
+    if (!execute_retained_arm_plan(
+        node, arm_group, continue_home_plan, "CONTINUE_FINAL_HOME"))
+    {stop(); return 1;}
+    RCLCPP_INFO(
+      node->get_logger(),
+      "REAL_CONTINUE_FROM_PREGRASP PASS: transfer, release, and final home completed.");
+    stop(); return 0;
+  }
 
   arm_group.setStartState(home_state);
   arm_group.setPlanningPipelineId("ompl");

@@ -26,6 +26,9 @@ def generate_launch_description():
                 "stop_at_grasp": ParameterValue(
                     LaunchConfiguration("stop_at_grasp"), value_type=bool
                 ),
+                "continue_from_pregrasp": ParameterValue(
+                    LaunchConfiguration("continue_from_pregrasp"), value_type=bool
+                ),
             },
         ],
     )
@@ -43,6 +46,14 @@ def generate_launch_description():
                 description=(
                     "Stop at the open-gripper grasp pose after the 60 mm descent; "
                     "skip close, lift, transfer, release, and final home."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "continue_from_pregrasp",
+                default_value="false",
+                description=(
+                    "Start at the already-loaded pregrasp pose and run only "
+                    "shoulder +pi transfer, release, settling, and final home."
                 ),
             ),
             pick_place_node,
