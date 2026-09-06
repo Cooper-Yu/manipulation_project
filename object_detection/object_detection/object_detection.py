@@ -1,6 +1,8 @@
 import rclpy
 from sensor_msgs.msg import PointCloud2
 from rclpy.node import Node
+from sensor_msgs_py import point_cloud2
+import numpy as np
 
 class ObjectDetectionNode(Node):
     def __init__(self) -> None:
@@ -18,6 +20,17 @@ class ObjectDetectionNode(Node):
     def pcl_callback(self, data: PointCloud2):
         self.pcl2_ready = True
 
+        points = point_cloud2.read_points(
+            data,
+            field_names=("x", "y", "z"),
+            skip_nans=True,
+        )
+
+        points_array = np.array(list(points), dtype=np.float32)
+
+        if points_array.size == 0:
+            self.get_logger().warning("Received empty point cloud")
+            return
 
 def main(args=None):
     rclpy.init(args=args)
