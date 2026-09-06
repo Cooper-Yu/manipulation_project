@@ -32,6 +32,10 @@ class ObjectDetectionNode(Node):
             self.get_logger().warning("Received empty point cloud")
             return
 
+        filtered_points = points_array[
+            np.isfinite(points_array).all(axis=1)
+        ]
+
 def main(args=None):
     rclpy.init(args=args)
     node = ObjectDetectionNode()
