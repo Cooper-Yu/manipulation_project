@@ -125,15 +125,13 @@ class ObjectDetectionNode(Node):
         segmenter.set_distance_threshold(0.01)
 
         indices, coefficients = segmenter.segment()
-        extractor = cloud.make_ExtractIndices()
+        surface_cloud = cloud.extract(indices)
 
-        extractor.set_Indices(indices)
-        surface_cloud = extractor.filter()
+        surface_index_set = set(indices)
+        object_indices = [index for index in range(len(filtered_points)) if index not in surface_index_set]
+        object_cloud = pcl.PointCloud()
+        object_cloud.from_array(filtered_points[object_indices])
 
-        extractor.set_Negative(True)
-        object_cloud = extractor.filter()
-
-        tree = object_cloud.make_kdtree()
         cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
         cluster_extractor.set_SearchMethod(tree)
         cluster_extractor.set_ClusterTolerance(0.02)
@@ -218,3 +216,4 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
