@@ -48,6 +48,13 @@ class ObjectDetectionNode(Node):
         segmenter.set_distance_threshold(0.01)
 
         indices, coefficients = segmenter.segment()
+        extractor = cloud.make_ExtractIndices()
+        
+        extractor.set_Indices(indices)
+        surface_cloud = extractor.filter()
+
+        extractor.set_Negative(True)
+        object_cloud = extractor.filter()
 
 def main(args=None):
     rclpy.init(args=args)
