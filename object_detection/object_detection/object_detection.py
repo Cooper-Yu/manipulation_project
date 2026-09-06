@@ -49,12 +49,20 @@ class ObjectDetectionNode(Node):
 
         indices, coefficients = segmenter.segment()
         extractor = cloud.make_ExtractIndices()
-        
+
         extractor.set_Indices(indices)
         surface_cloud = extractor.filter()
 
         extractor.set_Negative(True)
         object_cloud = extractor.filter()
+
+        cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
+        cluster_extractor.set_SearchMethod(tree)
+        cluster_extractor.set_ClusterTolerance(0.02)
+        cluster_extractor.set_MinClusterSize(100)
+        cluster_extractor.set_MaxClusterSize(25000)
+
+        cluster_indices = cluster_extractor.Extract()
 
 def main(args=None):
     rclpy.init(args=args)
