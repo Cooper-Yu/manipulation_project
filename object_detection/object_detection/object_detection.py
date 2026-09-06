@@ -3,6 +3,7 @@ from sensor_msgs.msg import PointCloud2
 from rclpy.node import Node
 from sensor_msgs_py import point_cloud2
 from object_detection.msg import DetectedObjects, DetectedSurfaces
+from visualization_msgs.msg import Marker, MarkerArray
 import numpy as np
 import pcl
 
@@ -46,6 +47,8 @@ class ObjectDetectionNode(Node):
             "surface_detected",
             10,
         )
+        self.surface_marker_pub = self.create_publisher(MarkerArray, "surface_markers", 10)
+        self.object_marker_pub = self.create_publisher(MarkerArray, "object_markers", 10)
 
     def pcl_callback(self, data: PointCloud2):
         self.pcl2_ready = True
@@ -100,6 +103,7 @@ class ObjectDetectionNode(Node):
         centroids, dimensions = summarize_clusters(cluster_clouds)
 
         surface_centroids, surface_dimensions = summarize_clusters([surface_cloud])
+        surface_markers = MarkerArray()
         if surface_centroids:
             surface_msg = DetectedSurfaces()
             surface_msg.surface_id = 0
@@ -109,7 +113,24 @@ class ObjectDetectionNode(Node):
             surface_msg.width = float(surface_dimensions[0][1])
             surface_msg.height = float(surface_dimensions[0][2])
             self.surface_detected_pub.publish(surface_msg)
+            marker = Marker()
+            marker.header = data.header
+            marker.header.frame_id = "base_link"
+            marker.id = 0
+            marker.type = Marker.CUBE
+            marker.action = Marker.ADD
+            marker.pose.position.x = surface_msg.position.x
+            marker.pose.position.y = surface_msg.position.y
+            marker.pose.position.z = surface_msg.position.z
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = float(surface_dimensions[0][0])
+            marker.scale.y = float(surface_dimensions[0][1])
+            marker.scale.z = max(float(surface_dimensions[0][2]), 0.01)
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.0, 1.0, 0.0, 0.35
+            surface_markers.markers.append(marker)
+        self.surface_marker_pub.publish(surface_markers)
 
+        object_markers = MarkerArray()
         for object_id, (centroid, size) in enumerate(zip(centroids, dimensions)):
             object_msg = DetectedObjects()
             object_msg.object_id = object_id
@@ -120,6 +141,22 @@ class ObjectDetectionNode(Node):
             object_msg.width = float(size[1])
             object_msg.height = float(size[2])
             self.object_detected_pub.publish(object_msg)
+            marker = Marker()
+            marker.header = data.header
+            marker.header.frame_id = "base_link"
+            marker.id = object_id
+            marker.type = Marker.CUBE
+            marker.action = Marker.ADD
+            marker.pose.position.x = object_msg.position.x
+            marker.pose.position.y = object_msg.position.y
+            marker.pose.position.z = object_msg.position.z
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = max(object_msg.thickness, 0.01)
+            marker.scale.y = max(object_msg.width, 0.01)
+            marker.scale.z = max(object_msg.height, 0.01)
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = 1.0, 0.0, 0.0, 0.5
+            object_markers.markers.append(marker)
+        self.object_marker_pub.publish(object_markers)
 
         
 
