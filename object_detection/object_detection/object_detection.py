@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import rclpy
 from sensor_msgs.msg import PointCloud2
 from rclpy.node import Node
@@ -208,4 +209,5 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
 

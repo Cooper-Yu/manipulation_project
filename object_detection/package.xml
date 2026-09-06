@@ -9,7 +9,9 @@
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
-  <depend>geometry_msgs</depend>`r`n  <depend>tf2_ros</depend>`r`n  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
@@ -28,4 +30,5 @@
     <build_type>ament_cmake</build_type>
   </export>
 </package>
+
 
