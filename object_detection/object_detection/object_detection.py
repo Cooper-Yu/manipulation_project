@@ -2,7 +2,7 @@ import rclpy
 from sensor_msgs.msg import PointCloud2
 from rclpy.node import Node
 from sensor_msgs_py import point_cloud2
-from object_detection.msg import DetectedObjects
+from object_detection.msg import DetectedObjects, DetectedSurfaces
 import numpy as np
 import pcl
 
@@ -39,6 +39,11 @@ class ObjectDetectionNode(Node):
         self.object_detected_pub = self.create_publisher(
             DetectedObjects,
             "object_detected",
+            10,
+        )
+        self.surface_detected_pub = self.create_publisher(
+            DetectedSurfaces,
+            "surface_detected",
             10,
         )
 
@@ -93,6 +98,17 @@ class ObjectDetectionNode(Node):
             cluster_clouds.append(object_cloud.extract(cluster_index_group))
 
         centroids, dimensions = summarize_clusters(cluster_clouds)
+
+        surface_centroids, surface_dimensions = summarize_clusters([surface_cloud])
+        if surface_centroids:
+            surface_msg = DetectedSurfaces()
+            surface_msg.surface_id = 0
+            surface_msg.position.x = float(surface_centroids[0][0])
+            surface_msg.position.y = float(surface_centroids[0][1])
+            surface_msg.position.z = float(surface_centroids[0][2])
+            surface_msg.width = float(surface_dimensions[0][1])
+            surface_msg.height = float(surface_dimensions[0][2])
+            self.surface_detected_pub.publish(surface_msg)
 
         for object_id, (centroid, size) in enumerate(zip(centroids, dimensions)):
             object_msg = DetectedObjects()
