@@ -132,7 +132,8 @@ class ObjectDetectionNode(Node):
         object_cloud = pcl.PointCloud()
         object_cloud.from_array(filtered_points[object_indices])
 
-        tree = object_cloud.make_kdtree()\n        cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
+        tree = object_cloud.make_kdtree()
+        cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
         cluster_extractor.set_SearchMethod(tree)
         cluster_extractor.set_ClusterTolerance(0.02)
         cluster_extractor.set_MinClusterSize(100)
@@ -216,5 +217,6 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
 
 
