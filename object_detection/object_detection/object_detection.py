@@ -4,6 +4,7 @@ from rclpy.node import Node
 from sensor_msgs_py import point_cloud2
 from object_detection.msg import DetectedObjects, DetectedSurfaces
 from visualization_msgs.msg import Marker, MarkerArray
+from tf2_ros import Buffer, TransformListener, TransformException
 import numpy as np
 import pcl
 
@@ -27,6 +28,8 @@ def summarize_clusters(clusters):
 class ObjectDetectionNode(Node):
     def __init__(self) -> None:
         super().__init__("object_detection_node")
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.point_cloud2_subscription = self.create_subscription(
             PointCloud2,
@@ -69,6 +72,28 @@ class ObjectDetectionNode(Node):
             np.isfinite(points_array).all(axis=1)
         ]
 
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "base_link", data.header.frame_id, rclpy.time.Time()
+            )
+        except TransformException as exc:
+            self.get_logger().warning(
+                f"Cannot transform {data.header.frame_id} to base_link: {exc}"
+            )
+            return
+
+        translation = transform.transform.translation
+        rotation = transform.transform.rotation
+        x, y, z, w = rotation.x, rotation.y, rotation.z, rotation.w
+        rotation_matrix = np.array([
+            [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+            [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+            [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y],
+        ], dtype=np.float64)
+        translation_vector = np.array([translation.x, translation.y, translation.z], dtype=np.float64)
+        filtered_points = (rotation_matrix @ filtered_points.astype(np.float64).T).T + translation_vector
+        filtered_points = filtered_points.astype(np.float32)
+
         cloud = pcl.PointCloud()
         cloud.from_array(
             np.asarray(filtered_points, dtype=np.float32)
@@ -88,6 +113,7 @@ class ObjectDetectionNode(Node):
         extractor.set_Negative(True)
         object_cloud = extractor.filter()
 
+        tree = object_cloud.make_kdtree()
         cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
         cluster_extractor.set_SearchMethod(tree)
         cluster_extractor.set_ClusterTolerance(0.02)
