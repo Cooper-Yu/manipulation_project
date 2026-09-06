@@ -75,7 +75,11 @@ class ObjectDetectionNode(Node):
             skip_nans=True,
         )
 
-        points_array = np.array(list(points), dtype=np.float32)
+        points_array = np.column_stack((
+            points["x"],
+            points["y"],
+            points["z"],
+        )).astype(np.float32)
 
         if points_array.size == 0:
             self.get_logger().warning("Received empty point cloud")
