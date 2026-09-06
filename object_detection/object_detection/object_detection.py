@@ -5,6 +5,23 @@ from sensor_msgs_py import point_cloud2
 import numpy as np
 import pcl
 
+
+
+def summarize_clusters(clusters):
+    centroids = []
+    dimensions = []
+
+    for cluster in clusters:
+        points = cluster.to_array()
+
+        if points.size == 0:
+            continue
+
+        centroids.append(np.mean(points, axis=0))
+        dimensions.append(np.max(points, axis=0) - np.min(points, axis=0))
+
+    return centroids, dimensions
+
 class ObjectDetectionNode(Node):
     def __init__(self) -> None:
         super().__init__("object_detection_node")
@@ -63,6 +80,14 @@ class ObjectDetectionNode(Node):
         cluster_extractor.set_MaxClusterSize(25000)
 
         cluster_indices = cluster_extractor.Extract()
+
+        cluster_clouds = []
+        for cluster_index_group in cluster_indices:
+            cluster_clouds.append(object_cloud.extract(cluster_index_group))
+
+        centroids, dimensions = summarize_clusters(cluster_clouds)
+
+        
 
 def main(args=None):
     rclpy.init(args=args)
