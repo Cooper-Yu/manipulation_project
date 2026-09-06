@@ -3,6 +3,7 @@ from sensor_msgs.msg import PointCloud2
 from rclpy.node import Node
 from sensor_msgs_py import point_cloud2
 import numpy as np
+import pcl
 
 class ObjectDetectionNode(Node):
     def __init__(self) -> None:
@@ -35,6 +36,18 @@ class ObjectDetectionNode(Node):
         filtered_points = points_array[
             np.isfinite(points_array).all(axis=1)
         ]
+
+        cloud = pcl.PointCloud()
+        cloud.from_array(
+            np.asarray(filtered_points, dtype=np.float32)
+        )
+
+        segmenter = cloud.make_segmenter()
+        segmenter.set_model_type(pcl.SACMODEL_PLANE)
+        segmenter.set_method_type(pcl.SAC_RANSAC)
+        segmenter.set_distance_threshold(0.01)
+
+        indices, coefficients = segmenter.segment()
 
 def main(args=None):
     rclpy.init(args=args)
