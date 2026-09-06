@@ -145,7 +145,7 @@ class ObjectDetectionNode(Node):
         for cluster_index_group in cluster_indices:
             cluster_clouds.append(object_cloud.extract(cluster_index_group))
 
-        centroids, dimensions = summarize_clusters(cluster_clouds)
+        centroids, dimensions = summarize_clusters(cluster_clouds)\n\n        plane_a, plane_b, plane_c, plane_d = coefficients\n        valid_centroids = []\n        valid_dimensions = []\n        valid_cluster_clouds = []\n        for centroid, size, cluster_cloud in zip(centroids, dimensions, cluster_clouds):\n            if max(size) > 0.20:\n                continue\n            if abs(plane_c) > 1e-6:\n                plane_z = -(plane_a * centroid[0] + plane_b * centroid[1] + plane_d) / plane_c\n                if centroid[2] - plane_z < 0.005:\n                    continue\n            valid_centroids.append(centroid)\n            valid_dimensions.append(size)\n            valid_cluster_clouds.append(cluster_cloud)\n        centroids, dimensions = valid_centroids, valid_dimensions
 
         surface_centroids, surface_dimensions = summarize_clusters([surface_cloud])
         surface_markers = MarkerArray()
@@ -217,6 +217,7 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
 
 
 
