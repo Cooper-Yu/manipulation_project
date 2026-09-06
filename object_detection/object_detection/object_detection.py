@@ -10,6 +10,18 @@ import pcl
 
 
 
+
+def quaternion_to_rotation_matrix(q):
+    x, y, z, w = q
+    return np.array([
+        [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+        [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+        [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y],
+    ], dtype=np.float64)
+
+
+def transform_point(point, rotation_matrix, translation):
+    return rotation_matrix @ point + translation
 def summarize_clusters(clusters):
     centroids = []
     dimensions = []
@@ -84,14 +96,17 @@ class ObjectDetectionNode(Node):
 
         translation = transform.transform.translation
         rotation = transform.transform.rotation
-        x, y, z, w = rotation.x, rotation.y, rotation.z, rotation.w
-        rotation_matrix = np.array([
-            [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
-            [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
-            [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y],
-        ], dtype=np.float64)
-        translation_vector = np.array([translation.x, translation.y, translation.z], dtype=np.float64)
-        filtered_points = (rotation_matrix @ filtered_points.astype(np.float64).T).T + translation_vector
+        rotation_matrix = quaternion_to_rotation_matrix(
+            (rotation.x, rotation.y, rotation.z, rotation.w)
+        )
+        translation_vector = np.array(
+            [translation.x, translation.y, translation.z], dtype=np.float64
+        )
+        filtered_points = np.array(
+            [transform_point(point, rotation_matrix, translation_vector)
+             for point in filtered_points],
+            dtype=np.float32,
+        )
         filtered_points = filtered_points.astype(np.float32)
 
         cloud = pcl.PointCloud()
@@ -193,3 +208,4 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
