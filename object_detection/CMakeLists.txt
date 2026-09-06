@@ -8,5 +8,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedObjects.msg"
   DEPENDENCIES geometry_msgs
 )
+install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
 ament_export_dependencies(rosidl_default_runtime geometry_msgs)
 ament_package()
