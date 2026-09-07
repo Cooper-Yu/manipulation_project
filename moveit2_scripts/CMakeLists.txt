@@ -10,6 +10,7 @@ find_package(control_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(object_detection REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -23,6 +24,18 @@ ament_target_dependencies(
   geometry_msgs
   moveit_ros_planning_interface
   moveit_msgs
+  rclcpp
+  tf2
+  tf2_geometry_msgs
+)
+
+add_executable(pick_and_place_perception src/pick_and_place_perception.cpp)
+ament_target_dependencies(
+  pick_and_place_perception
+  geometry_msgs
+  moveit_ros_planning_interface
+  moveit_msgs
+  object_detection
   rclcpp
   tf2
   tf2_geometry_msgs
@@ -102,6 +115,7 @@ ament_target_dependencies(
 
 install(TARGETS
   pick_and_place
+  pick_and_place_perception
   real_arm_lift_test
   real_hover_calibration
   real_safe_recovery_plan
