@@ -71,7 +71,7 @@ def generate_launch_description():
             description="Stop after gripper close and dwell.",
         ),
         DeclareLaunchArgument(
-            "stop_after_transfer", default_value="true",
+            "stop_after_transfer", default_value="false",
             description="Stop after shoulder transfer before release.",
         ),
         perception_node,

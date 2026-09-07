@@ -70,7 +70,7 @@ int main(int argc, char * argv[])
   node->get_parameter("skip_pre_grasp", skip_pre_grasp);
   bool stop_after_close = false;
   node->get_parameter("stop_after_close", stop_after_close);
-  bool stop_after_transfer = true;
+  bool stop_after_transfer = false;
   node->get_parameter("stop_after_transfer", stop_after_transfer);
 
   rclcpp::executors::SingleThreadedExecutor executor;
