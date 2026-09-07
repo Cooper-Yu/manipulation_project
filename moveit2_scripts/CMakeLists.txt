@@ -100,6 +100,7 @@ ament_target_dependencies(
   geometry_msgs
   moveit_msgs
   moveit_ros_planning_interface
+  object_detection
   rclcpp
   rclcpp_action
   std_srvs

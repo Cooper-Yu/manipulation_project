@@ -32,6 +32,8 @@ def generate_launch_description():
                 "continue_from_pregrasp": ParameterValue(
                     LaunchConfiguration("continue_from_pregrasp"), value_type=bool
                 ),
+                "use_perception": ParameterValue(use_perception, value_type=bool),
+                "detection_timeout": ParameterValue(detection_timeout, value_type=float),
             },
         ],
     )
@@ -53,6 +55,16 @@ def generate_launch_description():
                     "Stop at the open-gripper grasp pose after the 60 mm descent; "
                     "skip close, lift, transfer, release, and final home."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "use_perception",
+                default_value="true",
+                description="Use the real /object_detected target while retaining the Checkpoint 13 pose reference.",
+            ),
+            DeclareLaunchArgument(
+                "detection_timeout",
+                default_value="15.0",
+                description="Seconds to wait for a valid /object_detected message.",
             ),
             DeclareLaunchArgument(
                 "continue_from_pregrasp",

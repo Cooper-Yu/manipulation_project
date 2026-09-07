@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <cmath>
 #include <future>
 #include <map>
@@ -13,6 +15,7 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/robot_state/robot_state.h>
 #include <moveit_msgs/msg/display_trajectory.hpp>
+#include <object_detection/msg/detected_objects.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
@@ -24,6 +27,41 @@ using GripperGoalHandle = rclcpp_action::ClientGoalHandle<GripperCommand>;
 constexpr double kStateTolerance = 0.01;
 constexpr double kOpenCommand = 0.0;
 constexpr double kCloseCommand = 0.643;
+
+class DetectionState
+{
+public:
+  void update(const object_detection::msg::DetectedObjects::SharedPtr msg)
+  {
+    if (!msg || !std::isfinite(msg->position.x) || !std::isfinite(msg->position.y) ||
+      !std::isfinite(msg->position.z) || msg->thickness <= 0.0f || msg->width <= 0.0f ||
+      msg->height <= 0.0f)
+    {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    object_ = *msg;
+    ready_ = true;
+    condition_.notify_all();
+  }
+
+  bool wait(object_detection::msg::DetectedObjects & output, std::chrono::seconds timeout)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!condition_.wait_for(lock, timeout, [this]() {return ready_;})) {
+      return false;
+    }
+    output = object_;
+    return true;
+  }
+
+private:
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  bool ready_{false};
+  object_detection::msg::DetectedObjects object_{};
+};
+
 
 bool plan_is_valid(const Plan & plan)
 {
@@ -257,9 +295,13 @@ int main(int argc, char * argv[])
   bool execute = false;
   bool stop_at_grasp = false;
   bool continue_from_pregrasp = false;
+  bool use_perception = true;
+  double detection_timeout = 15.0;
   node->get_parameter("execute", execute);
   node->get_parameter("stop_at_grasp", stop_at_grasp);
   node->get_parameter("continue_from_pregrasp", continue_from_pregrasp);
+  node->get_parameter("use_perception", use_perception);
+  node->get_parameter("detection_timeout", detection_timeout);
   if (stop_at_grasp && continue_from_pregrasp) {
     RCLCPP_ERROR(
       node->get_logger(),
@@ -276,6 +318,14 @@ int main(int argc, char * argv[])
     "/display_planned_path", rclcpp::QoS(1).transient_local().reliable());
   const auto gripper_client = rclcpp_action::create_client<GripperCommand>(
     node, "/robotiq_gripper_controller/gripper_cmd");
+
+  auto detection_state = std::make_shared<DetectionState>();
+  auto detection_subscription = node->create_subscription<object_detection::msg::DetectedObjects>(
+    "/object_detected", rclcpp::QoS(10),
+    [detection_state](const object_detection::msg::DetectedObjects::SharedPtr msg) {
+      detection_state->update(msg);
+    });
+  (void)detection_subscription;
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
@@ -351,6 +401,39 @@ int main(int argc, char * argv[])
   pregrasp_target.pose.orientation.y = qy / q_norm;
   pregrasp_target.pose.orientation.z = qz / q_norm;
   pregrasp_target.pose.orientation.w = qw / q_norm;
+
+  if (use_perception) {
+    if (!std::isfinite(detection_timeout) || detection_timeout <= 0.0) {
+      RCLCPP_ERROR(node->get_logger(), "DETECTION_TIMEOUT FAIL: timeout must be positive.");
+      stop(); return 1;
+    }
+    object_detection::msg::DetectedObjects detected_object;
+    const auto timeout_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::duration<double>(detection_timeout));
+    if (!detection_state->wait(detected_object, std::max(std::chrono::seconds(1), timeout_seconds))) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "DETECTION_WAIT FAIL: no valid /object_detected message within %.1f seconds; no motion was attempted.",
+        detection_timeout);
+      stop(); return 1;
+    }
+    // The real detector publishes the object center in base_link. The
+    // Checkpoint 13 real grasp approached the contact-side corner, so retain
+    // its validated orientation/heights and apply the real -X/+Y half-size
+    // correction to the dynamic planar target. The fixed virtual joint makes
+    // this world planning target numerically compatible with base_link here.
+    pregrasp_target.pose.position.x =
+      detected_object.position.x - static_cast<double>(detected_object.thickness) / 2.0;
+    pregrasp_target.pose.position.y =
+      detected_object.position.y + static_cast<double>(detected_object.width) / 2.0;
+    RCLCPP_INFO(
+      node->get_logger(),
+      "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] half_size_shift=[-X %.4f, +Y %.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
+      detected_object.object_id, detected_object.position.x, detected_object.position.y,
+      detected_object.position.z, static_cast<double>(detected_object.thickness) / 2.0,
+      static_cast<double>(detected_object.width) / 2.0, pregrasp_target.pose.position.x,
+      pregrasp_target.pose.position.y, pregrasp_target.pose.position.z);
+  }
 
   if (continue_from_pregrasp) {
     // Pose validation is branch-independent: a different IK solution is valid
