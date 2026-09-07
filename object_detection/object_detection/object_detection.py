@@ -10,6 +10,9 @@ import numpy as np
 import pcl
 
 
+SURFACE_MARKER_MAX_WIDTH = 0.35
+
+
 
 
 def quaternion_to_rotation_matrix(q):
@@ -185,7 +188,10 @@ class ObjectDetectionNode(Node):
             marker.pose.position.z = surface_msg.position.z
             marker.pose.orientation.w = 1.0
             marker.scale.x = float(surface_dimensions[0][0])
-            marker.scale.y = float(surface_dimensions[0][1])
+            marker.scale.y = min(
+                float(surface_dimensions[0][1]),
+                SURFACE_MARKER_MAX_WIDTH,
+            )
             marker.scale.z = max(float(surface_dimensions[0][2]), 0.01)
             marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.0, 1.0, 0.0, 0.35
             surface_markers.markers.append(marker)
