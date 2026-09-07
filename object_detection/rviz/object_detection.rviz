@@ -1,6 +1,10 @@
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+  - Class: rviz_common/Time
+    Name: Time
 Visualization Manager:
   Class: ""
   Displays:
@@ -29,7 +33,6 @@ Visualization Manager:
   Global Options:
     Fixed Frame: base_link
   Name: root
-
 Views:
   Current:
     Class: rviz_default_plugins/Orbit
@@ -40,3 +43,7 @@ Views:
       Z: 0.25
     Pitch: 0.6
     Yaw: 0.8
+Window Geometry:
+  Height: 900
+  Width: 1400
+  QMainWindow State: ""
