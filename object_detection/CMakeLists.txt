@@ -10,6 +10,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 install(PROGRAMS object_detection/object_detection.py DESTINATION lib/${PROJECT_NAME} RENAME object_detection)
 install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/check_pcl.sh DESTINATION share/${PROJECT_NAME}/scripts)
 ament_export_dependencies(rosidl_default_runtime geometry_msgs)
 ament_package()
 
