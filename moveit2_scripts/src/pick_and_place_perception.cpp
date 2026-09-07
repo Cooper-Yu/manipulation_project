@@ -180,18 +180,19 @@ int main(int argc, char * argv[])
       node->get_logger(),
       "PRE_GRASP_DIAGNOSTIC_SKIP: using the current robot state; no pre-grasp plan was requested.");
   } else {
-    // Use the observed collision-free IK branch for the pre-grasp pose. Pose
-    // IK alone can select a folded branch whose vertical LIN approach
-    // self-collides even though the endpoint pose is identical.
-    const std::map<std::string, double> pre_grasp_joint_target = {
-      {"shoulder_pan_joint", -0.4537623629},
-      {"shoulder_lift_joint", -1.4902915267},
-      {"elbow_joint", 1.6791594026},
-      {"wrist_1_joint", -1.7592179731},
-      {"wrist_2_joint", -1.5706539700},
-      {"wrist_3_joint", -0.4543265903},
-    };
-    move_group.setJointValueTarget(pre_grasp_joint_target);
+    // The old Checkpoint 13 joint target belongs to the old fixed object
+    // position. For a perception target, plan to the dynamically generated
+    // Cartesian pre-grasp pose so MoveIt computes a new valid IK solution.
+    move_group.setPlanningPipelineId("ompl");
+    move_group.setPlannerId("");
+    move_group.setPlanningTime(5.0);
+    move_group.setNumPlanningAttempts(5);
+    move_group.setMaxVelocityScalingFactor(0.05);
+    move_group.setMaxAccelerationScalingFactor(0.05);
+    move_group.setStartStateToCurrentState();
+    move_group.setPoseReferenceFrame("base_link");
+    move_group.setEndEffectorLink("tool0");
+    move_group.setPoseTarget(target, "tool0");
     const auto result = move_group.plan(plan);
     success = (result == moveit::core::MoveItErrorCode::SUCCESS);
   }
