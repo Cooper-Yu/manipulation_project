@@ -10,6 +10,7 @@
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/robot_state/robot_state.h>
 #include <object_detection/msg/detected_objects.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
@@ -233,6 +234,36 @@ int main(int argc, char * argv[])
   target.pose.orientation =
     tf2::toMsg(tf2::Quaternion(-0.707, 0.707, 0.0, 0.0));
 
+  // Use the verified Checkpoint 13 arm configuration as the IK seed. The
+  // detected pose remains dynamic; this biases IK toward the known branch.
+  const std::map<std::string, double> checkpoint13_ik_seed = {
+    {"shoulder_pan_joint", -0.4537623629},
+    {"shoulder_lift_joint", -1.4902915267},
+    {"elbow_joint", 1.6791594026},
+    {"wrist_1_joint", -1.7592179731},
+    {"wrist_2_joint", -1.5706539700},
+    {"wrist_3_joint", -0.4543265903},
+  };
+  const auto robot_model = move_group.getRobotModel();
+  const auto * arm_group = robot_model->getJointModelGroup("ur_manipulator");
+  if (arm_group == nullptr) {
+    RCLCPP_ERROR(node->get_logger(), "IK_SEED FAIL: arm group was not found; no motion was attempted.");
+    executor.cancel(); spin_thread.join(); rclcpp::shutdown(); return 1;
+  }
+  moveit::core::RobotState ik_seed_state(robot_model);
+  ik_seed_state.setToDefaultValues();
+  for (const auto & [joint_name, joint_value] : checkpoint13_ik_seed) {
+    ik_seed_state.setJointPositions(joint_name, &joint_value);
+  }
+  ik_seed_state.update();
+  if (!ik_seed_state.setFromIK(arm_group, target.pose, "tool0", 0.5)) {
+    RCLCPP_ERROR(node->get_logger(), "IK_SEED FAIL: no solution near the Checkpoint 13 branch.");
+    executor.cancel(); spin_thread.join(); rclcpp::shutdown(); return 1;
+  }
+  std::vector<double> seeded_joint_target;
+  ik_seed_state.copyJointGroupPositions(arm_group, seeded_joint_target);
+  RCLCPP_INFO(node->get_logger(), "IK_SEED PASS: dynamic target solved near the Checkpoint 13 arm branch.");
+
   moveit::planning_interface::MoveGroupInterface::Plan plan;
   bool success = false;
   bool execution_success = false;
@@ -266,7 +297,7 @@ int main(int argc, char * argv[])
     move_group.setStartStateToCurrentState();
     move_group.setPoseReferenceFrame("base_link");
     move_group.setEndEffectorLink("tool0");
-    move_group.setPoseTarget(target, "tool0");
+    move_group.setJointValueTarget(seeded_joint_target);
     const auto result = move_group.plan(plan);
     success = (result == moveit::core::MoveItErrorCode::SUCCESS);
   }
