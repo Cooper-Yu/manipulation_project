@@ -214,9 +214,22 @@ int main(int argc, char * argv[])
   // Reuse the verified Checkpoint 13 tool-center offset while replacing the
   // planar target coordinates with the detected object's base_link position.
   constexpr double kToolCenterToObjectCenterZ = 0.23217;
-  target.pose.position.x = detected_object.position.x;
-  target.pose.position.y = detected_object.position.y;
+  // The gripper closes along base_link -Y.  Shift the tool target from the
+  // detected object centroid to the intended contact-side grasp reference:
+  // +X by half the object's X extent and -Y by half its Y extent.  Keep Z at
+  // the previously calibrated value.
+  target.pose.position.x = detected_object.position.x +
+    static_cast<double>(detected_object.thickness) / 2.0;
+  target.pose.position.y = detected_object.position.y -
+    static_cast<double>(detected_object.width) / 2.0;
   target.pose.position.z = detected_object.position.z + kToolCenterToObjectCenterZ;
+  RCLCPP_INFO(
+    node->get_logger(),
+    "GRASP_TARGET: centroid=[%.4f, %.4f, %.4f], half_size_shift=[+X %.4f, -Y %.4f], target=[%.4f, %.4f, %.4f].",
+    detected_object.position.x, detected_object.position.y, detected_object.position.z,
+    static_cast<double>(detected_object.thickness) / 2.0,
+    static_cast<double>(detected_object.width) / 2.0,
+    target.pose.position.x, target.pose.position.y, target.pose.position.z);
   target.pose.orientation =
     tf2::toMsg(tf2::Quaternion(-0.707, 0.707, 0.0, 0.0));
 
