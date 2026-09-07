@@ -44,12 +44,17 @@ def summarize_clusters(clusters):
 class ObjectDetectionNode(Node):
     def __init__(self) -> None:
         super().__init__("object_detection_node")
+        self.declare_parameter("point_cloud_topic", "/wrist_rgbd_depth_sensor/points")
+        self.declare_parameter("target_frame", "base_link")
+        self.point_cloud_topic = self.get_parameter("point_cloud_topic").get_parameter_value().string_value
+        self.target_frame = self.get_parameter("target_frame").get_parameter_value().string_value
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.point_cloud2_subscription = self.create_subscription(
             PointCloud2,
-            "/wrist_rgbd_depth_sensor/points",
+            self.point_cloud_topic,
             self.pcl_callback,
             10,
         )
@@ -94,11 +99,11 @@ class ObjectDetectionNode(Node):
 
         try:
             transform = self.tf_buffer.lookup_transform(
-                "base_link", data.header.frame_id, rclpy.time.Time()
+                self.target_frame, data.header.frame_id, rclpy.time.Time()
             )
         except TransformException as exc:
             self.get_logger().warning(
-                f"Cannot transform {data.header.frame_id} to base_link: {exc}"
+                f"Cannot transform {data.header.frame_id} to {self.target_frame}: {exc}"
             )
             return
 
@@ -179,7 +184,7 @@ class ObjectDetectionNode(Node):
             self.surface_detected_pub.publish(surface_msg)
             marker = Marker()
             marker.header = data.header
-            marker.header.frame_id = "base_link"
+            marker.header.frame_id = self.target_frame
             marker.id = 0
             marker.type = Marker.CUBE
             marker.action = Marker.ADD
@@ -210,7 +215,7 @@ class ObjectDetectionNode(Node):
             self.object_detected_pub.publish(object_msg)
             marker = Marker()
             marker.header = data.header
-            marker.header.frame_id = "base_link"
+            marker.header.frame_id = self.target_frame
             marker.id = object_id
             marker.type = Marker.CUBE
             marker.action = Marker.ADD
