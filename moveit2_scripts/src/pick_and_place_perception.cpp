@@ -57,6 +57,10 @@ int main(int argc, char * argv[])
   const auto node = rclcpp::Node::make_shared(
     "pick_and_place_perception",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+  bool gripper_only = false;
+  node->get_parameter("gripper_only", gripper_only);
+  double gripper_close_position = 0.643;
+  node->get_parameter("gripper_close_position", gripper_close_position);
   bool approach_plan_only = false;
   node->get_parameter("approach_plan_only", approach_plan_only);
   bool stop_after_approach = false;
@@ -68,16 +72,73 @@ int main(int argc, char * argv[])
   bool stop_after_transfer = true;
   node->get_parameter("stop_after_transfer", stop_after_transfer);
 
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+  std::thread spin_thread([&executor]() { executor.spin(); });
+
+  if (gripper_only) {
+    if (!std::isfinite(gripper_close_position) || gripper_close_position < 0.0 ||
+      gripper_close_position > 1.0)
+    {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "GRIPPER_ONLY FAIL: gripper_close_position must be finite and between 0.0 and 1.0 rad.");
+      executor.cancel();
+      spin_thread.join();
+      rclcpp::shutdown();
+      return 1;
+    }
+
+    moveit::planning_interface::MoveGroupInterface gripper_group(node, "gripper");
+    gripper_group.setStartStateToCurrentState();
+    if (!gripper_group.setJointValueTarget(
+        "robotiq_85_left_knuckle_joint", gripper_close_position))
+    {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "GRIPPER_ONLY_TARGET FAIL: could not set close position %.3f rad.",
+        gripper_close_position);
+      executor.cancel();
+      spin_thread.join();
+      rclcpp::shutdown();
+      return 1;
+    }
+
+    moveit::planning_interface::MoveGroupInterface::Plan gripper_plan;
+    const auto plan_result = gripper_group.plan(gripper_plan);
+    if (plan_result != moveit::core::MoveItErrorCode::SUCCESS) {
+      RCLCPP_ERROR(
+        node->get_logger(),
+        "GRIPPER_ONLY_PLAN FAIL: close position %.3f rad could not be planned.",
+        gripper_close_position);
+      executor.cancel();
+      spin_thread.join();
+      rclcpp::shutdown();
+      return 1;
+    }
+
+    RCLCPP_INFO(
+      node->get_logger(),
+      "GRIPPER_ONLY_PLAN PASS: executing close position %.3f rad from the current arm pose.",
+      gripper_close_position);
+    const auto execution_result = gripper_group.execute(gripper_plan);
+    const bool success = execution_result == moveit::core::MoveItErrorCode::SUCCESS;
+    RCLCPP_INFO(
+      node->get_logger(),
+      "GRIPPER_ONLY_%s: arm motion and perception were skipped; robot remains at the current arm pose.",
+      success ? "EXECUTION PASS" : "EXECUTION FAIL");
+    executor.cancel();
+    spin_thread.join();
+    rclcpp::shutdown();
+    return success ? 0 : 1;
+  }
+
   auto detection_state = std::make_shared<DetectionState>();
   auto detection_subscription = node->create_subscription<object_detection::msg::DetectedObjects>(
     "object_detected", rclcpp::QoS(10),
     [detection_state](const object_detection::msg::DetectedObjects::SharedPtr msg) {
       detection_state->update(msg);
     });
-
-  rclcpp::executors::SingleThreadedExecutor executor;
-  executor.add_node(node);
-  std::thread spin_thread([&executor]() { executor.spin(); });
 
   object_detection::msg::DetectedObjects detected_object;
   if (!detection_state->wait_for_detection(detected_object, std::chrono::seconds(15))) {
@@ -330,7 +391,7 @@ int main(int argc, char * argv[])
 
     const bool close_target_success =
       gripper_group.setJointValueTarget(
-        "robotiq_85_left_knuckle_joint", 0.643);
+        "robotiq_85_left_knuckle_joint", gripper_close_position);
 
     if (!close_target_success) {
       RCLCPP_ERROR(

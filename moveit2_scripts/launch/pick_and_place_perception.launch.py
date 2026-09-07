@@ -7,6 +7,8 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def generate_launch_description():
+    gripper_only = LaunchConfiguration("gripper_only")
+    gripper_close_position = LaunchConfiguration("gripper_close_position")
     approach_plan_only = LaunchConfiguration("approach_plan_only")
     stop_after_approach = LaunchConfiguration("stop_after_approach")
     skip_pre_grasp = LaunchConfiguration("skip_pre_grasp")
@@ -33,6 +35,8 @@ def generate_launch_description():
         parameters=[
             moveit_config.to_dict(),
             {"use_sim_time": True},
+            {"gripper_only": ParameterValue(gripper_only, value_type=bool)},
+            {"gripper_close_position": ParameterValue(gripper_close_position, value_type=float)},
             {"approach_plan_only": ParameterValue(approach_plan_only, value_type=bool)},
             {"stop_after_approach": ParameterValue(stop_after_approach, value_type=bool)},
             {"skip_pre_grasp": ParameterValue(skip_pre_grasp, value_type=bool)},
@@ -42,6 +46,14 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "gripper_only", default_value="false",
+            description="Only test the gripper from the current arm pose; skip perception and arm motion.",
+        ),
+        DeclareLaunchArgument(
+            "gripper_close_position", default_value="0.643",
+            description="Robotiq left knuckle close target in radians.",
+        ),
         DeclareLaunchArgument(
             "approach_plan_only", default_value="false",
             description="Plan the Pilz approach without executing it.",
