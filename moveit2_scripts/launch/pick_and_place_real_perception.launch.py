@@ -28,6 +28,7 @@ def generate_launch_description():
             moveit_config.to_dict(),
             {"use_sim_time": False},
             {"use_detected_z_plan_only": ParameterValue(LaunchConfiguration("use_detected_z_plan_only"), value_type=bool)},
+            {"detected_z_offset": ParameterValue(LaunchConfiguration("detected_z_offset"), value_type=float)},
             {"execute": ParameterValue(execute, value_type=bool)},
             {"use_perception": ParameterValue(use_perception, value_type=bool)},
             {"detection_timeout": ParameterValue(detection_timeout, value_type=float)},
@@ -38,7 +39,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("execute", default_value="false", description="Keep false for plan-only review."),
         DeclareLaunchArgument("use_perception", default_value="true"),
-        DeclareLaunchArgument("use_detected_z_plan_only", default_value="false", description="Compare detected Z as tool0 Z; requires execute=false and stop_at_grasp=true."),
+        DeclareLaunchArgument("use_detected_z_plan_only", default_value="false", description="Compare detected Z plus offset as tool0 Z; requires execute=false and stop_at_grasp=true."),
+        DeclareLaunchArgument("detected_z_offset", default_value="0.0", description="World-Z offset in metres; only allowed in detected-Z plan-only mode."),
         DeclareLaunchArgument("detection_timeout", default_value="15.0"),
         DeclareLaunchArgument("stop_at_grasp", default_value="false"),
         perception_launch,

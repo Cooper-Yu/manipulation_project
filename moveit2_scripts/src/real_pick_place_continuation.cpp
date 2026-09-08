@@ -298,6 +298,7 @@ int main(int argc, char * argv[])
   bool use_perception = true;
   bool use_detected_z_plan_only = false;
   double grasp_z = 0.208;
+  double detected_z_offset = 0.0;
   double detection_timeout = 15.0;
   node->get_parameter("execute", execute);
   node->get_parameter("stop_at_grasp", stop_at_grasp);
@@ -305,6 +306,14 @@ int main(int argc, char * argv[])
   node->get_parameter("use_perception", use_perception);
   node->get_parameter("detection_timeout", detection_timeout);
   node->get_parameter("use_detected_z_plan_only", use_detected_z_plan_only);
+  node->get_parameter("detected_z_offset", detected_z_offset);
+  if (!std::isfinite(detected_z_offset) ||
+    (detected_z_offset != 0.0 && !use_detected_z_plan_only))
+  {
+    RCLCPP_ERROR(node->get_logger(),
+      "DETECTED_Z_OFFSET REJECTED: requires a finite offset and diagnostic mode.");
+    rclcpp::shutdown(); return 1;
+  }
   if (use_detected_z_plan_only &&
     (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
   {
@@ -429,14 +438,14 @@ int main(int argc, char * argv[])
       stop(); return 1;
     }
     if (use_detected_z_plan_only) {
-      // Diagnostic only: deliberately equate the cloud centroid with tool0.
-      // No calibrated tool offset is applied; execution is rejected above.
-      grasp_z = detected_object.position.z;
+      // Diagnostic only: offset is a world-Z correction at the fixed orientation.
+      // The model grasp aid suggests about +0.16 m; execution is rejected above.
+      grasp_z = detected_object.position.z + detected_z_offset;
       pregrasp_target.pose.position.z = grasp_z + 0.060;
       RCLCPP_WARN(node->get_logger(),
         "DETECTED_Z_DIAGNOSTIC: grasp_tool0_z=%.6f pregrasp_tool0_z=%.6f; "
-        "zero tool offset, plan-only, not a calibrated grasp.",
-        grasp_z, pregrasp_target.pose.position.z);
+        "offset=%.6f m, plan-only, not a calibrated grasp.",
+        grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
     // The real detector publishes the object center in base_link. The
     // Checkpoint 13 real grasp approached the contact-side corner, so retain
