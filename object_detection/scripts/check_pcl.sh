@@ -25,13 +25,16 @@ if check_pcl; then
 fi
 
 echo "Python PCL is unavailable for ${PYTHON_BIN}; installing python3-pcl now."
-if [[ "${EUID}" -eq 0 ]]; then
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pcl
-else
-  sudo apt-get update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pcl
+if [[ "${EUID}" -eq 0 ]]; then SUDO=(); else SUDO=(sudo); fi
+# Try existing indexes first: unrelated expired repository keys must not block
+# installation of an already available Ubuntu package.
+if ! "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pcl; then
+  if check_pcl; then
+    echo 'PCL works despite an apt/dpkg error from another package.'
+    exit 0
+  fi
+  "${SUDO[@]}" apt-get update || echo 'Some apt indexes failed; retrying available signed indexes.'
+  "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pcl || true
 fi
-
 check_pcl
 echo "PCL dependency check passed."

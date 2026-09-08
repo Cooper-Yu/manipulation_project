@@ -18,7 +18,8 @@ def generate_launch_description():
     perception_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("object_detection"), "launch", "object_detection_real.launch.py"])
-        )
+        ),
+        launch_arguments={"use_rviz": "false"}.items(),
     )
     pick_place = Node(
         package="moveit2_scripts",
