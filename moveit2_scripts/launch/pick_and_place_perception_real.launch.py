@@ -1,3 +1,6 @@
+# Real CP14 entry: starts perception and pick/place; move_group must already be running.
+# No extra RViz is launched. Default execute=true commands the physical robot.
+# Use execute:=false to preview all planned arm stages without sending motion commands.
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource

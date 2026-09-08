@@ -1,3 +1,7 @@
+// CP14 simulation: detect an object, solve a dynamic tool0 target, and pick/place.
+// Simulation offsets and gripper targets are calibrated independently from the real robot.
+// A detection-ready condition prevents planning before a usable object message arrives.
+// Each stage checks the previous result before advancing to the next motion.
 #include <algorithm>
 #include <chrono>
 #include <cmath>

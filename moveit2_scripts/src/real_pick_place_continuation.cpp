@@ -1,3 +1,8 @@
+// CP14 real-robot workflow: perception selects the target; CP13 supplies motion stages.
+// Object coordinates follow the base_link convention; tool0 is the pose target link.
+// The lab world<-base_link transform was verified as identity, not assumed universally.
+// All arm stages are planned before execution. A failed stage stops the remaining sequence.
+// Plan-only exits: a later execute launch generates new plans, not the earlier preview.
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>

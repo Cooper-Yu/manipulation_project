@@ -10,6 +10,7 @@ import numpy as np
 import pcl
 
 
+# Limit only the displayed surface width; published measurements stay unchanged.
 SURFACE_MARKER_MAX_WIDTH = 0.35
 
 
@@ -36,6 +37,8 @@ def summarize_clusters(clusters):
         if points.size == 0:
             continue
 
+        # Visible-point mean, not necessarily the physical object's geometric center.
+        # Extents are axis-aligned in target_frame: X=thickness, Y=width, Z=height.
         centroids.append(np.mean(points, axis=0))
         dimensions.append(np.max(points, axis=0) - np.min(points, axis=0))
 
@@ -77,6 +80,7 @@ class ObjectDetectionNode(Node):
     def pcl_callback(self, data: PointCloud2):
         self.pcl2_ready = True
 
+        # Decode fields using the message layout (including padding and point_step).
         points = point_cloud2.read_points(
             data,
             field_names=("x", "y", "z"),
@@ -97,6 +101,8 @@ class ObjectDetectionNode(Node):
             np.isfinite(points_array).all(axis=1)
         ]
 
+        # Convert camera coordinates before segmentation and publishing detections.
+        # Time() requests the latest TF; this is not timestamp-synchronized lookup.
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.target_frame, data.header.frame_id, rclpy.time.Time()
@@ -127,6 +133,7 @@ class ObjectDetectionNode(Node):
             np.asarray(filtered_points, dtype=np.float32)
         )
 
+        # RANSAC separates the dominant plane from candidate object points.
         segmenter = cloud.make_segmenter()
         segmenter.set_model_type(pcl.SACMODEL_PLANE)
         segmenter.set_method_type(pcl.SAC_RANSAC)
@@ -140,6 +147,7 @@ class ObjectDetectionNode(Node):
         object_cloud = pcl.PointCloud()
         object_cloud.from_array(filtered_points[object_indices])
 
+        # Group nearby non-plane points, then reject oversized or below-plane clusters.
         tree = object_cloud.make_kdtree()
         cluster_extractor = object_cloud.make_EuclideanClusterExtraction()
         cluster_extractor.set_SearchMethod(tree)
