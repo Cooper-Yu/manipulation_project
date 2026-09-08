@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -293,6 +294,8 @@ int main(int argc, char * argv[])
     "real_pick_place_continuation",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
   bool reviewed_grasp_test = false;
+  bool prefer_cp13_branch = false;
+  std::vector<double> cp13_reference_joints;
   bool execute = false;
   bool stop_at_grasp = false;
   bool continue_from_pregrasp = false;
@@ -321,6 +324,26 @@ int main(int argc, char * argv[])
     RCLCPP_ERROR(node->get_logger(),
       "REVIEWED_GRASP_TEST REJECTED: requires stop_at_grasp=true, perception, "
       "no continuation and no diagnostic overrides.");
+    rclcpp::shutdown(); return 1;
+  }
+  node->get_parameter("prefer_cp13_branch", prefer_cp13_branch);
+  std::string reference_text;
+  node->get_parameter("cp13_reference_joints", reference_text);
+  for (char & ch : reference_text) {
+    if (ch == '[' || ch == ']' || ch == ',') ch = ' ';
+  }
+  std::istringstream reference_stream(reference_text);
+  double reference_value;
+  while (reference_stream >> reference_value) cp13_reference_joints.push_back(reference_value);
+  if (prefer_cp13_branch && !reference_stream.eof()) {
+    RCLCPP_ERROR(node->get_logger(), "CP13_REFERENCE REJECTED: invalid numeric list.");
+    rclcpp::shutdown(); return 1;
+  }
+  if (prefer_cp13_branch && (cp13_reference_joints.size() != 6 ||
+    !std::all_of(cp13_reference_joints.begin(), cp13_reference_joints.end(),
+      [](double v) { return std::isfinite(v); })))
+  {
+    RCLCPP_ERROR(node->get_logger(), "CP13_REFERENCE REJECTED: provide six verified real pregrasp joint values.");
     rclcpp::shutdown(); return 1;
   }
   if (use_detected_x_plan_only &&
@@ -630,10 +653,78 @@ int main(int argc, char * argv[])
   // -> 60 mm LIN lift -> shoulder +pi transfer -> release -> final home.
   arm_group.setPlanningPipelineId("ompl");
   arm_group.setPlannerId("");
-  arm_group.setPoseTarget(pregrasp_target, "tool0");
   Plan approach_plan;
-  if (arm_group.plan(approach_plan) != moveit::core::MoveItErrorCode::SUCCESS ||
-    !plan_is_valid(approach_plan))
+  bool approach_ok = false;
+  if (prefer_cp13_branch) {
+    const std::vector<std::string> reference_names = {
+      "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
+    if (arm_joint_names != reference_names) {
+      RCLCPP_ERROR(node->get_logger(), "CP13_REFERENCE FAIL: unexpected joint order.");
+      stop(); return 1;
+    }
+    moveit::core::RobotState reference(home_state);
+    reference.setJointGroupPositions(arm_jmg, cp13_reference_joints);
+    if (!reference.satisfiesBounds(arm_jmg)) {
+      RCLCPP_ERROR(node->get_logger(), "CP13_REFERENCE FAIL: reference outside joint bounds.");
+      stop(); return 1;
+    }
+    // Score only discovered IK solutions, not a claim of globally nearest IK.
+    std::vector<std::pair<double, std::vector<double>>> candidates;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+      moveit::core::RobotState candidate(reference);
+      auto seed = cp13_reference_joints;
+      if (attempt != 0) {
+        for (size_t j = 0; j < seed.size(); ++j) {
+          seed[j] += 0.6 * std::sin(static_cast<double>(attempt * (j + 1)));
+        }
+      }
+      candidate.setJointGroupPositions(arm_jmg, seed);
+      candidate.enforceBounds(arm_jmg);
+      candidate.update();
+      if (!candidate.setFromIK(arm_jmg, pregrasp_target.pose, "tool0", 0.1)) continue;
+      std::vector<double> values;
+      candidate.copyJointGroupPositions(arm_jmg, values);
+      // Prefer equivalent angles near the reference only if inside actual limits.
+      auto near = values;
+      for (size_t j = 0; j < near.size(); ++j) {
+        near[j] = cp13_reference_joints[j] +
+          std::remainder(values[j] - cp13_reference_joints[j], 2.0 * std::acos(-1.0));
+      }
+      candidate.setJointGroupPositions(arm_jmg, near);
+      if (candidate.satisfiesBounds(arm_jmg)) values = near;
+      candidate.setJointGroupPositions(arm_jmg, values);
+      if (!candidate.satisfiesBounds(arm_jmg)) continue;
+      double score = 0.0;
+      for (size_t j = 0; j < values.size(); ++j) {
+        score += std::pow(values[j] - cp13_reference_joints[j], 2);
+      }
+      candidates.emplace_back(score, values);
+    }
+    std::sort(candidates.begin(), candidates.end(),
+      [](const auto & a, const auto & b) { return a.first < b.first; });
+    for (const auto & candidate : candidates) {
+      arm_group.clearPoseTargets();
+      arm_group.setStartState(home_state);
+      if (!arm_group.setJointValueTarget(candidate.second)) continue;
+      if (arm_group.plan(approach_plan) == moveit::core::MoveItErrorCode::SUCCESS &&
+        plan_is_valid(approach_plan)) {
+        approach_ok = true;
+        RCLCPP_INFO(node->get_logger(), "CP13_BRANCH_SELECTED: sampled=%zu joint_distance=%.6f rad.",
+          candidates.size(), std::sqrt(candidate.first));
+        for (size_t j = 0; j < candidate.second.size(); ++j) {
+          RCLCPP_INFO(node->get_logger(), "CP13_BRANCH_JOINT: %s reference=%.6f target=%.6f",
+            reference_names[j].c_str(), cp13_reference_joints[j], candidate.second[j]);
+        }
+        break;
+      }
+    }
+  } else {
+    arm_group.setPoseTarget(pregrasp_target, "tool0");
+    approach_ok = arm_group.plan(approach_plan) == moveit::core::MoveItErrorCode::SUCCESS &&
+      plan_is_valid(approach_plan);
+  }
+  if (!approach_ok)
   {
     RCLCPP_ERROR(node->get_logger(), "PREGRASP_PLAN FAIL."); stop(); return 1;
   }
