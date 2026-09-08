@@ -12,7 +12,7 @@ ENDPOINT=""
 if [[ "${1:-}" == "--help" ]]; then
   echo "Usage: $0 [--endpoint tcp/ADDRESS:7447]"
   echo 'Checks/installs PCL and Zenoh when missing; verifies real PointCloud2 reception.'
-  echo 'Uses current Zenoh config unless --endpoint is supplied; Ctrl+C stops our bridge.'
+  echo 'Migrates the known old course endpoint; --endpoint overrides explicitly. Ctrl+C stops our bridge.'
   exit 0
 fi
 if [[ $# -gt 0 ]]; then
@@ -32,7 +32,9 @@ if pgrep -f '^([^ ]*/)?zenoh-bridge-ros2dds([[:space:]]|$)' >/dev/null; then
   exit 1
 fi
 [[ -f "$CONFIG" ]] || { echo "Missing configuration: $CONFIG"; exit 1; }
-if [[ -n "$ENDPOINT" ]]; then
+if ! command -v zenoh-bridge-ros2dds >/dev/null; then
+  bash "$SCRIPT_DIR/install_zenoh_bridge.sh"
+fi
   /usr/bin/python3 - "$CONFIG" "$ENDPOINT" <<'PY'
 import json, pathlib, re, shutil, sys, time
 path = pathlib.Path(sys.argv[1])
@@ -40,17 +42,19 @@ text = path.read_text()
 pattern = r'(\bconnect\s*:\s*\{\s*endpoints\s*:\s*\[\s*)"[^"]+"'
 if len(re.findall(pattern, text)) != 1:
     raise SystemExit('Expected one connect/endpoints entry; configuration unchanged.')
-updated = re.sub(pattern, lambda m: m[1] + json.dumps(sys.argv[2]), text)
+match = re.search(pattern, text)
+current = re.search(r'"([^"]+)"$', match[0])[1]
+old = 'tcp/fc94:0b54:846d:9c64:09af:11e1:9805:dc3f:7447'
+replacement = 'tcp/fc94:f06b:d715:dcae:32c3:fb09:a8b6:a534:7447'
+target = sys.argv[2] or (replacement if current == old else current)
+updated = re.sub(pattern, lambda m: m[1] + json.dumps(target), text)
+print('Zenoh connect endpoint:', target)
 if updated != text:
     backup = str(path) + '.backup.' + str(time.time_ns())
     shutil.copy2(path, backup)
     path.write_text(updated)
     print('Endpoint updated; backup:', backup)
 PY
-fi
-if ! command -v zenoh-bridge-ros2dds >/dev/null; then
-  bash "$SCRIPT_DIR/install_zenoh_bridge.sh"
-fi
 LOG_DIR="$HOME/.ros/real_perception"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/zenoh-$(date +%Y%m%d-%H%M%S)-$$.log"
