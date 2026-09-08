@@ -298,6 +298,7 @@ int main(int argc, char * argv[])
   bool use_perception = true;
   bool use_detected_z_plan_only = false;
   bool use_detected_y_plan_only = false;
+  bool use_detected_x_plan_only = false;
   double grasp_z = 0.208;
   double detected_z_offset = 0.0;
   double detection_timeout = 15.0;
@@ -309,6 +310,15 @@ int main(int argc, char * argv[])
   node->get_parameter("use_detected_z_plan_only", use_detected_z_plan_only);
   node->get_parameter("detected_z_offset", detected_z_offset);
   node->get_parameter("use_detected_y_plan_only", use_detected_y_plan_only);
+  node->get_parameter("use_detected_x_plan_only", use_detected_x_plan_only);
+  if (use_detected_x_plan_only &&
+    (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
+  {
+    RCLCPP_ERROR(node->get_logger(),
+      "DETECTED_X_MODE REJECTED: requires execute=false, use_perception=true, "
+      "stop_at_grasp=true and continue_from_pregrasp=false.");
+    rclcpp::shutdown(); return 1;
+  }
   if (use_detected_y_plan_only &&
     (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
   {
@@ -459,18 +469,20 @@ int main(int argc, char * argv[])
     }
     // Detection positions use base_link; the observed world<-base_link TF is
     // identity in this lab. Half-size shifts are empirical candidates.
-    // The Y diagnostic removes only the positive half-width correction.
+    // Axis diagnostics independently remove their half-size corrections.
+    const double x_shift = use_detected_x_plan_only ? 0.0 :
+      static_cast<double>(detected_object.thickness) / 2.0;
     const double y_shift = use_detected_y_plan_only ? 0.0 :
       static_cast<double>(detected_object.width) / 2.0;
     pregrasp_target.pose.position.x =
-      detected_object.position.x - static_cast<double>(detected_object.thickness) / 2.0;
+      detected_object.position.x - x_shift;
     pregrasp_target.pose.position.y =
       detected_object.position.y + y_shift;
     RCLCPP_INFO(
       node->get_logger(),
       "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] applied_shift=[-X %.4f, +Y %.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
       detected_object.object_id, detected_object.position.x, detected_object.position.y,
-      detected_object.position.z, static_cast<double>(detected_object.thickness) / 2.0,
+      detected_object.position.z, x_shift,
       y_shift, pregrasp_target.pose.position.x,
       pregrasp_target.pose.position.y, pregrasp_target.pose.position.z);
   }
