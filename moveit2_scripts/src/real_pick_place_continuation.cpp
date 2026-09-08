@@ -510,7 +510,7 @@ int main(int argc, char * argv[])
         grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
     if (reviewed_grasp_test) {
-      // User-reviewed candidate: X centroid, optional Y half-width, Z plus 155 mm.
+      // Candidate for review: X minus half-thickness, Y plus half-width, Z plus 155 mm.
       // This mode is restricted to the existing open-gripper stop-at-grasp path.
       grasp_z = detected_object.position.z + 0.155;
       pregrasp_target.pose.position.z = grasp_z + 0.060;
@@ -521,7 +521,7 @@ int main(int argc, char * argv[])
     // Detection positions use base_link; the observed world<-base_link TF is
     // identity in this lab. Half-size shifts are empirical candidates.
     // Axis diagnostics independently remove their half-size corrections.
-    const double x_shift = (use_detected_x_plan_only || reviewed_grasp_test) ? 0.0 :
+    const double x_shift = use_detected_x_plan_only ? 0.0 :
       static_cast<double>(detected_object.thickness) / 2.0;
     const double y_shift = (use_detected_y_plan_only || reviewed_grasp_center_y) ? 0.0 :
       static_cast<double>(detected_object.width) / 2.0;
