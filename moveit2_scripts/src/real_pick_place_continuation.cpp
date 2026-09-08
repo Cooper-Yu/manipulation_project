@@ -296,12 +296,23 @@ int main(int argc, char * argv[])
   bool stop_at_grasp = false;
   bool continue_from_pregrasp = false;
   bool use_perception = true;
+  bool use_detected_z_plan_only = false;
+  double grasp_z = 0.208;
   double detection_timeout = 15.0;
   node->get_parameter("execute", execute);
   node->get_parameter("stop_at_grasp", stop_at_grasp);
   node->get_parameter("continue_from_pregrasp", continue_from_pregrasp);
   node->get_parameter("use_perception", use_perception);
   node->get_parameter("detection_timeout", detection_timeout);
+  node->get_parameter("use_detected_z_plan_only", use_detected_z_plan_only);
+  if (use_detected_z_plan_only &&
+    (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
+  {
+    RCLCPP_ERROR(node->get_logger(),
+      "DETECTED_Z_MODE REJECTED: requires execute=false, use_perception=true, "
+      "stop_at_grasp=true and continue_from_pregrasp=false.");
+    rclcpp::shutdown(); return 1;
+  }
   if (stop_at_grasp && continue_from_pregrasp) {
     RCLCPP_ERROR(
       node->get_logger(),
@@ -416,6 +427,16 @@ int main(int argc, char * argv[])
         "DETECTION_WAIT FAIL: no valid /object_detected message within %.1f seconds; no motion was attempted.",
         detection_timeout);
       stop(); return 1;
+    }
+    if (use_detected_z_plan_only) {
+      // Diagnostic only: deliberately equate the cloud centroid with tool0.
+      // No calibrated tool offset is applied; execution is rejected above.
+      grasp_z = detected_object.position.z;
+      pregrasp_target.pose.position.z = grasp_z + 0.060;
+      RCLCPP_WARN(node->get_logger(),
+        "DETECTED_Z_DIAGNOSTIC: grasp_tool0_z=%.6f pregrasp_tool0_z=%.6f; "
+        "zero tool offset, plan-only, not a calibrated grasp.",
+        grasp_z, pregrasp_target.pose.position.z);
     }
     // The real detector publishes the object center in base_link. The
     // Checkpoint 13 real grasp approached the contact-side corner, so retain
@@ -569,7 +590,7 @@ int main(int argc, char * argv[])
   apply_plan_endpoint(pregrasp_state, approach_plan);
   set_planning_gripper_state(pregrasp_state, kOpenCommand);
   auto grasp_target = pregrasp_target;
-  grasp_target.pose.position.z = 0.208;
+  grasp_target.pose.position.z = grasp_z;
   arm_group.setStartState(pregrasp_state);
   arm_group.setPlanningPipelineId("pilz_industrial_motion_planner");
   arm_group.setPlannerId("LIN");
