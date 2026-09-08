@@ -44,10 +44,10 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument("reviewed_grasp_test", default_value="false", description="Candidate X-thickness/2+0.003, Y+width/2-0.002, Z+height/2+0.1923; requires stop_at_grasp=true and no diagnostic overrides."),
+        DeclareLaunchArgument("reviewed_grasp_test", default_value="false", description="Candidate X-thickness/2+0.003, Y+width/2-0.002, Z+height/2+0.1923; supports stop_at_grasp or full sequence; no diagnostic overrides."),
         DeclareLaunchArgument("prefer_cp13_branch", default_value="false"),
         DeclareLaunchArgument("cp13_reference_joints", default_value="[]", description="Verified real pregrasp joints: pan, lift, elbow, wrist1, wrist2, wrist3 (rad)."),
-        DeclareLaunchArgument("reviewed_grasp_center_y", default_value="false", description="Remove Y half-width correction only in bounded reviewed_grasp_test mode."),
+        DeclareLaunchArgument("reviewed_grasp_center_y", default_value="false", description="Remove Y half-width correction only in reviewed_grasp_test mode."),
         DeclareLaunchArgument("execute", default_value="false", description="Keep false for plan-only review."),
         DeclareLaunchArgument("use_perception", default_value="true"),
         DeclareLaunchArgument("use_detected_z_plan_only", default_value="false", description="Compare detected Z plus offset as tool0 Z; requires execute=false and stop_at_grasp=true."),

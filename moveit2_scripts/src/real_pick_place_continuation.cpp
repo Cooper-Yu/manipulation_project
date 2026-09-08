@@ -325,12 +325,12 @@ int main(int argc, char * argv[])
     rclcpp::shutdown(); return 1;
   }
   if (reviewed_grasp_test &&
-    (!stop_at_grasp || !use_perception || continue_from_pregrasp ||
+    (!use_perception || continue_from_pregrasp ||
     use_detected_x_plan_only || use_detected_y_plan_only || use_detected_z_plan_only ||
     detected_z_offset != 0.0))
   {
     RCLCPP_ERROR(node->get_logger(),
-      "REVIEWED_GRASP_TEST REJECTED: requires stop_at_grasp=true, perception, "
+      "REVIEWED_GRASP_TEST REJECTED: requires perception, "
       "no continuation and no diagnostic overrides.");
     rclcpp::shutdown(); return 1;
   }
@@ -512,12 +512,12 @@ int main(int argc, char * argv[])
     }
     if (reviewed_grasp_test) {
       // Empirical calibration candidate; 0.1923 m is not a measured tool length.
-      // This mode is restricted to the existing open-gripper stop-at-grasp path.
+      // Both stop-at-grasp and the complete sequence share this calibration.
       grasp_z = detected_object.position.z + static_cast<double>(detected_object.height) / 2.0 + 0.1923;
       pregrasp_target.pose.position.z = grasp_z + 0.060;
       RCLCPP_WARN(node->get_logger(),
         "REVIEWED_GRASP_TEST: grasp_tool0_z=%.6f; Z=centroid+height/2+0.1923 m; "
-        "stop after descent, no gripper close or lift.", grasp_z);
+        "sequence=%s.", grasp_z, stop_at_grasp ? "stop at grasp" : "full pick and place");
     }
     // Detection positions use base_link; the observed world<-base_link TF is
     // identity in this lab. Half-size shifts are empirical candidates.
