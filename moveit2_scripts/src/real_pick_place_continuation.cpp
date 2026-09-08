@@ -35,7 +35,8 @@ public:
   void update(const object_detection::msg::DetectedObjects::SharedPtr msg)
   {
     if (!msg || !std::isfinite(msg->position.x) || !std::isfinite(msg->position.y) ||
-      !std::isfinite(msg->position.z) || msg->thickness <= 0.0f || msg->width <= 0.0f ||
+      !std::isfinite(msg->position.z) || !std::isfinite(msg->thickness) ||
+      !std::isfinite(msg->width) || !std::isfinite(msg->height) || msg->thickness <= 0.0f || msg->width <= 0.0f ||
       msg->height <= 0.0f)
     {
       return;
@@ -510,12 +511,12 @@ int main(int argc, char * argv[])
         grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
     if (reviewed_grasp_test) {
-      // Candidate for review: X minus half-thickness, Y plus half-width, Z plus 155 mm.
+      // Empirical calibration candidate; 0.1923 m is not a measured tool length.
       // This mode is restricted to the existing open-gripper stop-at-grasp path.
-      grasp_z = detected_object.position.z + 0.155;
+      grasp_z = detected_object.position.z + static_cast<double>(detected_object.height) / 2.0 + 0.1923;
       pregrasp_target.pose.position.z = grasp_z + 0.060;
       RCLCPP_WARN(node->get_logger(),
-        "REVIEWED_GRASP_TEST: grasp_tool0_z=%.6f; offset=0.155 m; "
+        "REVIEWED_GRASP_TEST: grasp_tool0_z=%.6f; Z=centroid+height/2+0.1923 m; "
         "stop after descent, no gripper close or lift.", grasp_z);
     }
     // Detection positions use base_link; the observed world<-base_link TF is
@@ -526,15 +527,15 @@ int main(int argc, char * argv[])
     const double y_shift = (use_detected_y_plan_only || reviewed_grasp_center_y) ? 0.0 :
       static_cast<double>(detected_object.width) / 2.0;
     pregrasp_target.pose.position.x =
-      detected_object.position.x - x_shift;
+      detected_object.position.x - x_shift + (reviewed_grasp_test ? 0.003 : 0.0);
     pregrasp_target.pose.position.y =
-      detected_object.position.y + y_shift;
+      detected_object.position.y + y_shift - (reviewed_grasp_test ? 0.002 : 0.0);
     RCLCPP_INFO(
       node->get_logger(),
-      "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] applied_shift=[-X %.4f, +Y %.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
+      "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] applied_shift=[X %+.4f, Y %+.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
       detected_object.object_id, detected_object.position.x, detected_object.position.y,
-      detected_object.position.z, x_shift,
-      y_shift, pregrasp_target.pose.position.x,
+      detected_object.position.z, pregrasp_target.pose.position.x - detected_object.position.x,
+      pregrasp_target.pose.position.y - detected_object.position.y, pregrasp_target.pose.position.x,
       pregrasp_target.pose.position.y, pregrasp_target.pose.position.z);
   }
 

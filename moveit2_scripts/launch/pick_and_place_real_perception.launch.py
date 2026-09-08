@@ -44,7 +44,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument("reviewed_grasp_test", default_value="false", description="Candidate X minus half-thickness/Y plus half-width/Z +0.155; requires stop_at_grasp=true and no diagnostic overrides."),
+        DeclareLaunchArgument("reviewed_grasp_test", default_value="false", description="Candidate X-thickness/2+0.003, Y+width/2-0.002, Z+height/2+0.1923; requires stop_at_grasp=true and no diagnostic overrides."),
         DeclareLaunchArgument("prefer_cp13_branch", default_value="false"),
         DeclareLaunchArgument("cp13_reference_joints", default_value="[]", description="Verified real pregrasp joints: pan, lift, elbow, wrist1, wrist2, wrist3 (rad)."),
         DeclareLaunchArgument("reviewed_grasp_center_y", default_value="false", description="Remove Y half-width correction only in bounded reviewed_grasp_test mode."),
