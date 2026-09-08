@@ -292,6 +292,7 @@ int main(int argc, char * argv[])
   const auto node = rclcpp::Node::make_shared(
     "real_pick_place_continuation",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
+  bool reviewed_grasp_test = false;
   bool execute = false;
   bool stop_at_grasp = false;
   bool continue_from_pregrasp = false;
@@ -311,6 +312,17 @@ int main(int argc, char * argv[])
   node->get_parameter("detected_z_offset", detected_z_offset);
   node->get_parameter("use_detected_y_plan_only", use_detected_y_plan_only);
   node->get_parameter("use_detected_x_plan_only", use_detected_x_plan_only);
+  node->get_parameter("reviewed_grasp_test", reviewed_grasp_test);
+  if (reviewed_grasp_test &&
+    (!stop_at_grasp || !use_perception || continue_from_pregrasp ||
+    use_detected_x_plan_only || use_detected_y_plan_only || use_detected_z_plan_only ||
+    detected_z_offset != 0.0))
+  {
+    RCLCPP_ERROR(node->get_logger(),
+      "REVIEWED_GRASP_TEST REJECTED: requires stop_at_grasp=true, perception, "
+      "no continuation and no diagnostic overrides.");
+    rclcpp::shutdown(); return 1;
+  }
   if (use_detected_x_plan_only &&
     (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
   {
@@ -467,10 +479,19 @@ int main(int argc, char * argv[])
         "offset=%.6f m, plan-only, not a calibrated grasp.",
         grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
+    if (reviewed_grasp_test) {
+      // User-reviewed candidate: X centroid, Y plus half-width, Z plus 155 mm.
+      // This mode is restricted to the existing open-gripper stop-at-grasp path.
+      grasp_z = detected_object.position.z + 0.155;
+      pregrasp_target.pose.position.z = grasp_z + 0.060;
+      RCLCPP_WARN(node->get_logger(),
+        "REVIEWED_GRASP_TEST: grasp_tool0_z=%.6f; offset=0.155 m; "
+        "stop after descent, no gripper close or lift.", grasp_z);
+    }
     // Detection positions use base_link; the observed world<-base_link TF is
     // identity in this lab. Half-size shifts are empirical candidates.
     // Axis diagnostics independently remove their half-size corrections.
-    const double x_shift = use_detected_x_plan_only ? 0.0 :
+    const double x_shift = (use_detected_x_plan_only || reviewed_grasp_test) ? 0.0 :
       static_cast<double>(detected_object.thickness) / 2.0;
     const double y_shift = use_detected_y_plan_only ? 0.0 :
       static_cast<double>(detected_object.width) / 2.0;

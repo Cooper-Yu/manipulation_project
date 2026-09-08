@@ -32,6 +32,7 @@ def generate_launch_description():
             {"detected_z_offset": ParameterValue(LaunchConfiguration("detected_z_offset"), value_type=float)},
             {"use_detected_y_plan_only": ParameterValue(LaunchConfiguration("use_detected_y_plan_only"), value_type=bool)},
             {"use_detected_x_plan_only": ParameterValue(LaunchConfiguration("use_detected_x_plan_only"), value_type=bool)},
+            {"reviewed_grasp_test": ParameterValue(LaunchConfiguration("reviewed_grasp_test"), value_type=bool)},
             {"execute": ParameterValue(execute, value_type=bool)},
             {"use_perception": ParameterValue(use_perception, value_type=bool)},
             {"detection_timeout": ParameterValue(detection_timeout, value_type=float)},
@@ -40,6 +41,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument("reviewed_grasp_test", default_value="false", description="Reviewed X centroid/Y half-width/Z +0.155 candidate; requires stop_at_grasp=true and no diagnostic overrides."),
         DeclareLaunchArgument("execute", default_value="false", description="Keep false for plan-only review."),
         DeclareLaunchArgument("use_perception", default_value="true"),
         DeclareLaunchArgument("use_detected_z_plan_only", default_value="false", description="Compare detected Z plus offset as tool0 Z; requires execute=false and stop_at_grasp=true."),
