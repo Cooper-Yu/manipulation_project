@@ -294,6 +294,7 @@ int main(int argc, char * argv[])
     "real_pick_place_continuation",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true));
   bool reviewed_grasp_test = false;
+  bool reviewed_grasp_center_y = false;
   bool prefer_cp13_branch = false;
   std::vector<double> cp13_reference_joints;
   bool execute = false;
@@ -316,6 +317,12 @@ int main(int argc, char * argv[])
   node->get_parameter("use_detected_y_plan_only", use_detected_y_plan_only);
   node->get_parameter("use_detected_x_plan_only", use_detected_x_plan_only);
   node->get_parameter("reviewed_grasp_test", reviewed_grasp_test);
+  node->get_parameter("reviewed_grasp_center_y", reviewed_grasp_center_y);
+  if (reviewed_grasp_center_y && !reviewed_grasp_test) {
+    RCLCPP_ERROR(node->get_logger(),
+      "REVIEWED_CENTER_Y REJECTED: requires reviewed_grasp_test=true.");
+    rclcpp::shutdown(); return 1;
+  }
   if (reviewed_grasp_test &&
     (!stop_at_grasp || !use_perception || continue_from_pregrasp ||
     use_detected_x_plan_only || use_detected_y_plan_only || use_detected_z_plan_only ||
@@ -503,7 +510,7 @@ int main(int argc, char * argv[])
         grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
     if (reviewed_grasp_test) {
-      // User-reviewed candidate: X centroid, Y plus half-width, Z plus 155 mm.
+      // User-reviewed candidate: X centroid, optional Y half-width, Z plus 155 mm.
       // This mode is restricted to the existing open-gripper stop-at-grasp path.
       grasp_z = detected_object.position.z + 0.155;
       pregrasp_target.pose.position.z = grasp_z + 0.060;
@@ -516,7 +523,7 @@ int main(int argc, char * argv[])
     // Axis diagnostics independently remove their half-size corrections.
     const double x_shift = (use_detected_x_plan_only || reviewed_grasp_test) ? 0.0 :
       static_cast<double>(detected_object.thickness) / 2.0;
-    const double y_shift = use_detected_y_plan_only ? 0.0 :
+    const double y_shift = (use_detected_y_plan_only || reviewed_grasp_center_y) ? 0.0 :
       static_cast<double>(detected_object.width) / 2.0;
     pregrasp_target.pose.position.x =
       detected_object.position.x - x_shift;
