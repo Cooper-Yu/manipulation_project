@@ -49,17 +49,8 @@ if updated != text:
 PY
 fi
 if ! command -v zenoh-bridge-ros2dds >/dev/null; then
-  echo 'Zenoh bridge missing; installing the course version from configured apt sources.'
-  if [[ "$EUID" -eq 0 ]]; then SUDO=(); else SUDO=(sudo); fi
-  if ! "${SUDO[@]}" apt-get install -y zenoh-bridge-ros2dds=0.11.0-rc.3; then
-    # A container may report an unrelated/post-install systemd failure.
-    if ! command -v zenoh-bridge-ros2dds >/dev/null; then
-      "${SUDO[@]}" apt-get update || echo 'Some apt sources failed; retrying with available indexes.'
-      "${SUDO[@]}" apt-get install -y zenoh-bridge-ros2dds=0.11.0-rc.3 || true
-    fi
-  fi
+  bash "$SCRIPT_DIR/install_zenoh_bridge.sh"
 fi
-command -v zenoh-bridge-ros2dds >/dev/null || { echo 'Zenoh installation failed. Repair the apt sources/keys in the cloud image; no signature checks were disabled.'; exit 1; }
 LOG_DIR="$HOME/.ros/real_perception"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/zenoh-$(date +%Y%m%d-%H%M%S)-$$.log"
