@@ -297,6 +297,7 @@ int main(int argc, char * argv[])
   bool continue_from_pregrasp = false;
   bool use_perception = true;
   bool use_detected_z_plan_only = false;
+  bool use_detected_y_plan_only = false;
   double grasp_z = 0.208;
   double detected_z_offset = 0.0;
   double detection_timeout = 15.0;
@@ -307,6 +308,15 @@ int main(int argc, char * argv[])
   node->get_parameter("detection_timeout", detection_timeout);
   node->get_parameter("use_detected_z_plan_only", use_detected_z_plan_only);
   node->get_parameter("detected_z_offset", detected_z_offset);
+  node->get_parameter("use_detected_y_plan_only", use_detected_y_plan_only);
+  if (use_detected_y_plan_only &&
+    (execute || !use_perception || continue_from_pregrasp || !stop_at_grasp))
+  {
+    RCLCPP_ERROR(node->get_logger(),
+      "DETECTED_Y_MODE REJECTED: requires execute=false, use_perception=true, "
+      "stop_at_grasp=true and continue_from_pregrasp=false.");
+    rclcpp::shutdown(); return 1;
+  }
   if (!std::isfinite(detected_z_offset) ||
     (detected_z_offset != 0.0 && !use_detected_z_plan_only))
   {
@@ -447,21 +457,21 @@ int main(int argc, char * argv[])
         "offset=%.6f m, plan-only, not a calibrated grasp.",
         grasp_z, pregrasp_target.pose.position.z, detected_z_offset);
     }
-    // The real detector publishes the object center in base_link. The
-    // Checkpoint 13 real grasp approached the contact-side corner, so retain
-    // its validated orientation/heights and apply the real -X/+Y half-size
-    // correction to the dynamic planar target. The fixed virtual joint makes
-    // this world planning target numerically compatible with base_link here.
+    // Detection positions use base_link; the observed world<-base_link TF is
+    // identity in this lab. Half-size shifts are empirical candidates.
+    // The Y diagnostic removes only the positive half-width correction.
+    const double y_shift = use_detected_y_plan_only ? 0.0 :
+      static_cast<double>(detected_object.width) / 2.0;
     pregrasp_target.pose.position.x =
       detected_object.position.x - static_cast<double>(detected_object.thickness) / 2.0;
     pregrasp_target.pose.position.y =
-      detected_object.position.y + static_cast<double>(detected_object.width) / 2.0;
+      detected_object.position.y + y_shift;
     RCLCPP_INFO(
       node->get_logger(),
-      "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] half_size_shift=[-X %.4f, +Y %.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
+      "REAL_DETECTION_TARGET: object_id=%u centroid_base=[%.4f, %.4f, %.4f] applied_shift=[-X %.4f, +Y %.4f] pregrasp_world=[%.4f, %.4f, %.4f].",
       detected_object.object_id, detected_object.position.x, detected_object.position.y,
       detected_object.position.z, static_cast<double>(detected_object.thickness) / 2.0,
-      static_cast<double>(detected_object.width) / 2.0, pregrasp_target.pose.position.x,
+      y_shift, pregrasp_target.pose.position.x,
       pregrasp_target.pose.position.y, pregrasp_target.pose.position.z);
   }
 
